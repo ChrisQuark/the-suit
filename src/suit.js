@@ -29,7 +29,7 @@ export function buildSuit(materials = {}) {
     soft:new THREE.MeshStandardMaterial({color:0x242629,roughness:.96,bumpMap:nylonMap,bumpScale:.0005}),
     carbon:new THREE.MeshStandardMaterial({color:0x27292c,roughness:.44,metalness:.28,map:carbonMap,bumpMap:carbonMap,bumpScale:.00025}),
     strap:new THREE.MeshStandardMaterial({color:0x17191b,roughness:.96,bumpMap:nylonMap,bumpScale:.0006}),
-    metal:new THREE.MeshPhysicalMaterial({color:0x272b30,metalness:.78,roughness:.36,bumpMap:metalMap,bumpScale:.00009,clearcoat:.20,clearcoatRoughness:.32,iridescence:.07,iridescenceIOR:1.3,iridescenceThicknessRange:[120,220]}),
+    metal:new THREE.MeshPhysicalMaterial({color:0xc5ccd4,metalness:1,roughness:.19,bumpMap:metalMap,bumpScale:.000035,clearcoat:.30,clearcoatRoughness:.32,iridescence:.025,iridescenceIOR:1.3,iridescenceThicknessRange:[120,220]}),
     edge:new THREE.MeshStandardMaterial({color:0x14181d,roughness:.6,metalness:.55}),
     rubber:new THREE.MeshStandardMaterial({color:0x141619,roughness:.88,bumpMap:rubberMap,bumpScale:.0006}),
     fastener:new THREE.MeshStandardMaterial({color:0x555c65,metalness:.7,roughness:.42}),
@@ -83,14 +83,21 @@ export function buildSuit(materials = {}) {
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();const inner=mesh(g.clone(),mat.skin,mannequin,name+' mannequin');inner.scale.set(.99,1,.99);return mesh(g,material,parent,name,explode);
   }
   function shellRelief(name,x,y){
-    if(name.includes('chest plate')||name.includes('back plate')){
-      const upper=Math.exp(-Math.pow((y-1.55)/.12,2));
-      const pec=Math.exp(-Math.pow((Math.abs(x)-.095)/.09,2));
-      return .016*pec*upper-.018*Math.pow((y-1.54)/.16,2)+.004*Math.exp(-x*x/.0005)*upper;
+    const bell=(v,c,w)=>Math.exp(-Math.pow((v-c)/w,2));
+    if(name.includes('chest plate')){
+      // Two pectoral volumes, a recessed sternum and curved lower rib boundary.
+      const pec=.043*bell(Math.abs(x),.105,.078)*bell(y,1.546,.080);
+      const sternum=.007*bell(x,0,.018)*bell(y,1.54,.105);
+      return pec-sternum-.016*Math.pow((y-1.54)/.16,2);
     }
-    if(name.includes('thigh plate'))return -.16*Math.pow(y-.88,2);
-    if(name.includes('shin plate'))return .006*Math.exp(-Math.pow(x/.022,2))-.12*Math.pow(y-.36,2);
-    if(name.includes('forearm plate'))return -.22*Math.pow(y-1.245,2);
+    if(name.includes('back plate'))return .022*bell(Math.abs(x),.105,.073)*bell(y,1.555,.09)-.008*bell(x,0,.024)-.014*Math.pow((y-1.54)/.16,2);
+    if(name.includes('Abdominal lame')){
+      const i=Number(name.match(/lame (\d)/)?.[1]||1)-1,cy=1.405-i*.055-.031;
+      return .017*bell(Math.abs(x),.064,.047)*bell(y,cy,.030)-.003*bell(x,0,.015);
+    }
+    if(name.includes('thigh plate'))return .020*bell(x,0,.043)*bell(y,.887,.125)-.16*Math.pow(y-.88,2);
+    if(name.includes('shin plate'))return .013*bell(x,0,.019)-.12*Math.pow(y-.36,2);
+    if(name.includes('forearm plate'))return .013*bell(x,0,.026)*bell(y,1.25,.09)-.22*Math.pow(y-1.245,2);
     return 0;
   }
   function panel(parent,name,outline,z,thickness,material,explode=[0,0,0],curve=.0,curveOrigin=0){
@@ -184,24 +191,35 @@ export function buildSuit(materials = {}) {
     for(let f=0;f<4;f++){const x=s*(.404+f*.017),y=1.005+(f===0?.01:f===3?.012:0);ellipsoid(groups[7],`${side} glove finger ${f+1}`,[x,y,.034],[.010,.041-(f===3?.007:0),.012],mat.rubber,[s*.18,-.025,.16],16);}
     const thumb=ellipsoid(groups[7],`${side} glove thumb`,[s*.39,1.055,.049],[.013,.035,.016],mat.rubber,[s*.18,-.025,.16]);thumb.rotation.z=-s*.45;
     link(groups[7],`${side} glove wrist`,[s*.409,1.1,.026],[s*.419,1.126,.026],.040,.034,mat.rubber,[s*.18,-.025,.16]);
+    const gloveEx=[s*.18,-.025,.16];
+    const cuff=link(groups[7],`${side} NETFORCE extended glove cuff`,[s*.415,1.098,.026],[s*.401,1.195,.020],.047,.037,mat.rubber,gloveEx);
+    ellipsoid(groups[7],`${side} NETFORCE cuff mesh insert`,[s*.407,1.153,.057],[.021,.034,.004],mat.strap,gloveEx);
+    ellipsoid(groups[7],`${side} NETFORCE mesh knuckle oval`,[s*.431,1.05,.057],[.036,.018,.006],mat.strap,gloveEx);
+    const cuffBand=box(groups[7],`${side} NETFORCE cuff closure`,[s*.416,1.108,.061],[.084,.016,.007],mat.rubber,gloveEx);cuffBand.rotation.z=s*.10;
+    for(let f=0;f<4;f++)ellipsoid(groups[7],`${side} NETFORCE dorsal finger mesh ${f+1}`,[s*(.404+f*.017),1.02,.046],[.006,.019,.003],mat.strap,gloveEx,16);
     const bootRows=[[-.058,.036,.071,.031],[-.045,.050,.096,.049],[-.005,.058,.107,.064],[.035,.061,.101,.061],[.080,.064,.083,.043],[.135,.063,.069,.028],[.178,.053,.065,.023],[.206,.023,.062,.018],[.213,.001,.061,.005]];
     const bp=[],bu=[],bi=[],N=48;
     const bc=new THREE.CatmullRomCurve3(bootRows.map(r=>new THREE.Vector3(r[0],r[1],r[2]))),br=new THREE.SplineCurve(bootRows.map(r=>new THREE.Vector2(r[3],0)));
     for(let i=0;i<=64;i++){const t=i/64,c=bc.getPoint(t),ry=br.getPoint(t).x;for(let j=0;j<=N;j++){const a=j/N*Math.PI*2;bp.push(s*.153+c.y*Math.cos(a),Math.max(.042,c.z+ry*Math.sin(a)),c.x);bu.push(j/N,t);}}
     for(let i=0;i<64;i++)for(let j=0;j<N;j++){const a=i*(N+1)+j,b=a+N+1;bi.push(a,a+1,b,b,a+1,b+1);}
-    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(bp,3));bg.setAttribute('uv',new THREE.Float32BufferAttribute(bu,2));bg.setIndex(bi);bg.computeVertexNormals();mesh(bg,mat.rubber,groups[7],`${side} sculpted athletic boot`,[s*.14,-.05,.13]);
-    for(const d of [-1,1])line(groups[7],`${side} bonded boot quarter seam ${d}`,[[s*.153+d*.051,.115,-.03],[s*.153+d*.060,.118,.035],[s*.153+d*.062,.089,.092],[s*.153+d*.055,.080,.161]],mat.seam,.00085,[s*.14,-.05,.13]);
+    for(const row of [0,64]){
+      const center=bp.length/3,z=bp[(row*(N+1))*3+2];let cy=0;for(let j=0;j<N;j++)cy+=bp[(row*(N+1)+j)*3+1]/N;
+      bp.push(s*.153,cy,z);bu.push(.5,row/64);
+      for(let j=0;j<N;j++){const a=row*(N+1)+j,b=a+1;if(row===0)bi.push(center,b,a);else bi.push(center,a,b);}
+    }
+    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(bp,3));bg.setAttribute('uv',new THREE.Float32BufferAttribute(bu,2));bg.setIndex(bi);bg.computeVertexNormals();mesh(bg,mat.rubber,groups[7],`${side} sculpted athletic boot`,[s*.14,.035,.13]);
+    for(const d of [-1,1])line(groups[7],`${side} bonded boot quarter seam ${d}`,[[s*.153+d*.051,.115,-.03],[s*.153+d*.060,.118,.035],[s*.153+d*.062,.089,.092],[s*.153+d*.055,.080,.161]],mat.seam,.00085,[s*.14,.035,.13]);
     const soleShape=new THREE.Shape();soleShape.moveTo(-.035,-.065);soleShape.quadraticCurveTo(-.07,-.065,-.07,-.02);soleShape.lineTo(-.07,.16);soleShape.quadraticCurveTo(-.07,.215,0,.215);soleShape.quadraticCurveTo(.07,.215,.07,.16);soleShape.lineTo(.07,-.02);soleShape.quadraticCurveTo(.07,-.065,.035,-.065);soleShape.closePath();
-    const sole=mesh(new THREE.ExtrudeGeometry(soleShape,{depth:.021,bevelEnabled:true,bevelThickness:.003,bevelSize:.002,bevelSegments:2,steps:1,curveSegments:16}),mat.edge,groups[7],`${side} rounded athletic sole`,[s*.14,-.05,.13]);sole.rotation.x=Math.PI/2;sole.position.set(s*.153,.041,0);remember(sole);
-    link(groups[7],`${side} knit boot collar`,[s*.151,.135,0],[s*.15,.201,0],.058,.060,mat.knit,[s*.14,-.05,.13]);
+    const sole=mesh(new THREE.ExtrudeGeometry(soleShape,{depth:.021,bevelEnabled:true,bevelThickness:.003,bevelSize:.002,bevelSegments:2,steps:1,curveSegments:16}),mat.edge,groups[7],`${side} rounded athletic sole`,[s*.14,.035,.13]);sole.rotation.x=Math.PI/2;sole.position.set(s*.153,.041,0);remember(sole);
+    link(groups[7],`${side} knit boot collar`,[s*.151,.135,0],[s*.15,.201,0],.058,.060,mat.knit,[s*.14,.035,.13]);
     for(let j=0;j<5;j++){
-      const y=.150-j*.008,z=.040+j*.021,ex=[s*.14,-.05,.13];
+      const y=.150-j*.008,z=.040+j*.021,ex=[s*.14,.035,.13];
       for(const d of [-1,1]){
         const eye=mesh(new THREE.TorusGeometry(.0035,.001,6,12),mat.fastener,groups[7],`${side} boot eyelet ${j} ${d}`,ex);eye.position.set(s*.153+d*.025,y,z);eye.rotation.x=-.7;remember(eye);
         line(groups[7],`${side} cross lace ${j} ${d}`,[[s*.153+d*.025,y,z],[s*.153,y+.003,z+.010],[s*.153-d*.025,y-.008,z+.021]],mat.strap,.0016,ex);
       }
     }
-    for(let j=0;j<8;j++)for(const d of [-1,1])box(groups[7],`${side} sole traction lug ${j} ${d}`,[s*.153+d*.064,.033,-.025+j*.027],[.012,.010,.014],mat.rubber,[s*.14,-.05,.13]);
+    for(let j=0;j<8;j++)for(const d of [-1,1])box(groups[7],`${side} sole traction lug ${j} ${d}`,[s*.153+d*.064,.033,-.025+j*.027],[.012,.010,.014],mat.rubber,[s*.14,.035,.13]);
     for(let f=0;f<4;f++){
       const x=s*(.404+f*.017),ex=[s*.18,-.025,.16];
       ellipsoid(groups[7],`${side} flexible knuckle reinforcement ${f}`,[x,1.045,.055],[.008,.013,.003],mat.knit,ex,16);
@@ -246,7 +264,7 @@ export function buildSuit(materials = {}) {
   rings(groups[5],'Soft waist belt',[[1.1065,.160,.098],[1.1315,.160,.099]],mat.strap,[0,0,.15]);
   box(groups[5],'Waist belt buckle',[0,1.119,.109],[.051,.027,.014],mat.edge,[0,0,.16]);
   // Chest stops at solar plexus. There is no connection to the abdominal lames.
-  const chest=[[-.115,1.654],[-.058,1.628],[.058,1.628],[.115,1.654],[.200,1.589],[.215,1.502],[.159,1.422],[.081,1.406],[-.081,1.406],[-.159,1.422],[-.215,1.502],[-.200,1.589]];
+  const chest=[[-.115,1.654],[-.058,1.628],[.058,1.628],[.115,1.654],[.194,1.604],[.211,1.535],[.191,1.469],[.147,1.429],[.081,1.406],[-.081,1.406],[-.147,1.429],[-.191,1.469],[-.211,1.535],[-.194,1.604]];
   panel(groups[6],'Independent chest plate',chest,.188,.008,mat.metal,[0,.02,.69],1.50);
   const back=panel(groups[6],'Independent upper back plate',chest,.182,.008,mat.metal,[0,.02,-.66],1.50);back.rotation.y=Math.PI;
   // Recessed milled breaks, a central fold and restrained edge lines.
@@ -272,8 +290,31 @@ export function buildSuit(materials = {}) {
     }
     const edge=line(groups[6],`Abdominal lame ${i+1} downward overlap`,[[-w+.012,bottom+.01,z-w*w+.007],[0,bottom+.001,z+.009],[w-.012,bottom+.01,z-w*w+.007]],mat.edge,.001);edge.userData.explode.set(0,-i*.012,.72+i*.08);
   }
+  for(const m of mannequin.children){
+    if(!/head|Crown|ear/.test(m.name))continue;
+    const a=new THREE.Matrix4().makeTranslation(0,1.784,0).multiply(new THREE.Matrix4().makeScale(1.13,1.27,1.16)).multiply(new THREE.Matrix4().makeTranslation(0,-1.784,0));
+    m.updateMatrix();m.geometry.applyMatrix4(m.matrix);m.position.set(0,0,0);m.rotation.set(0,0,0);m.scale.set(1,1,1);m.geometry.applyMatrix4(a);remember(m);
+  }
   // Optional hanging tasset omitted: the unplated waist remains uninterrupted.
   groups.forEach((g,i)=>g.traverse(o=>{if(o.isMesh)o.userData.layer=i;}));
+  const components=new Map();
+  for(const m of [...parts,...hardwareParts]){
+    const n=m.name,side=n.startsWith('Left')?'left':n.startsWith('Right')?'right':null,layer=m.userData.layer;
+    let id=null,label=n;
+    if(layer===6||m.userData.hardware){
+      const abs=n.match(/(?:Abdominal lame|Lame) (\d)/);
+      if(abs){id='abdomen-'+abs[1];label='Abdominal plate '+abs[1];}
+      else if(/chest|Chest|Torso recessed|Harness strap threaded/.test(n)){id='chest';label='Pectoral chest plate';}
+      else if(/back plate|Back plate|Back harness/.test(n)){id='back';label='Upper back plate';}
+      else if(side&&/shoulder/.test(n)){id=side+'-shoulder';label=side+' shoulder cap';}
+      else if(side&&/forearm|thigh|shin/.test(n)&&(!m.userData.hardware||n.includes('loop on plate back'))){const area=n.match(/forearm|thigh|shin/)[0];id=side+'-'+area;label=side+' '+area+' plate';}
+    }
+    if(layer===7){const glove=/glove|NETFORCE|knuckle|finger/.test(n);id=side+(glove?'-glove':'-boot');label=side+(glove?' NETFORCE-style glove':' athletic boot');}
+    if(!id)id='mesh-'+m.id;
+    m.userData.component=id;
+    if(!components.has(id))components.set(id,{id,name:label.charAt(0).toUpperCase()+label.slice(1),layer,meshes:[]});
+    const c=components.get(id);c.meshes.push(m);if(layer===6&&!m.userData.hardware)c.layer=6;
+  }
   root.updateMatrixWorld(true);
-  return {root,groups,parts,hardware,hardwareParts,collarKnits,mannequin,materials:mat,abdominal,pads};
+  return {root,groups,parts,components,hardware,hardwareParts,collarKnits,mannequin,materials:mat,abdominal,pads};
 }
