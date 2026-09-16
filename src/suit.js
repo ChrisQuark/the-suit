@@ -65,6 +65,24 @@ export function buildSuit(materials = {}) {
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();
     return mesh(g,material,parent,name,explode);
   }
+  function fittedShell(parent,name,rows,material,explode,start=-Math.PI,end=Math.PI,thickness=.003){
+    const N=48,R=rows.length,vs=[],uv=[],idx=[];
+    for(let side=0;side<2;side++)for(let r=0;r<R;r++)for(let j=0;j<=N;j++){
+      const [y,cx,rx,rz,cz=0]=rows[r],a=start+(end-start)*j/N,t=side?-thickness:0;
+      vs.push(cx+Math.sin(a)*(rx+t),y,cz+Math.cos(a)*(rz+t));uv.push(j/N,r/(R-1));
+    }
+    const count=R*(N+1),forward=end>start;
+    function tri(a,b,c,reverse=false){if(forward!==reverse)idx.push(a,b,c);else idx.push(a,c,b);}
+    for(let side=0;side<2;side++)for(let r=0;r<R-1;r++)for(let j=0;j<N;j++){const a=side*count+r*(N+1)+j,b=a+N+1;tri(a,a+1,b,!!side);tri(b,a+1,b+1,!!side);}
+    for(let j=0;j<N;j++)for(const r of [0,R-1]){const a=r*(N+1)+j;tri(a,a+count,a+1,r>0);tri(a+1,a+count,a+count+1,r>0);}
+    for(let r=0;r<R-1;r++)for(const j of [0,N]){const a=r*(N+1)+j,b=a+N+1;tri(a,b,a+count,j===N);tri(b,b+count,a+count,j===N);}
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();return mesh(g,material,parent,name,explode);
+  }
+  function shoulderRibbon(name,x,explode){
+    const path=new THREE.CatmullRomCurve3([[x,1.34,.155],[x,1.55,.157],[x,1.66,.11],[x,1.685,0],[x,1.66,-.11],[x,1.55,-.157],[x,1.34,-.155]].map(v=>new THREE.Vector3(...v)));
+    const shape=new THREE.Shape();shape.moveTo(-.0125,-.001);shape.lineTo(.0125,-.001);shape.lineTo(.0125,.001);shape.lineTo(-.0125,.001);shape.closePath();
+    return mesh(new THREE.ExtrudeGeometry(shape,{steps:80,bevelEnabled:false,extrudePath:path}),mat.strap,groups[5],name,explode);
+  }
   function tailoredLimb(parent,name,rows,material,explode){
     const center=new THREE.CatmullRomCurve3(rows.map(r=>new THREE.Vector3(r[1],r[0],r[4]||0)));
     const radii=new THREE.SplineCurve(rows.map(r=>new THREE.Vector2(r[2],r[3])));
@@ -86,18 +104,18 @@ export function buildSuit(materials = {}) {
     const bell=(v,c,w)=>Math.exp(-Math.pow((v-c)/w,2));
     if(name.includes('chest plate')){
       // Two pectoral volumes, a recessed sternum and curved lower rib boundary.
-      const pec=.043*bell(Math.abs(x),.105,.078)*bell(y,1.546,.080);
+      const pec=.024*bell(Math.abs(x),.105,.078)*bell(y,1.546,.080);
       const sternum=.007*bell(x,0,.018)*bell(y,1.54,.105);
       return pec-sternum-.016*Math.pow((y-1.54)/.16,2);
     }
-    if(name.includes('back plate'))return .022*bell(Math.abs(x),.105,.073)*bell(y,1.555,.09)-.008*bell(x,0,.024)-.014*Math.pow((y-1.54)/.16,2);
+    if(name.includes('back plate'))return .014*bell(Math.abs(x),.105,.073)*bell(y,1.555,.09)-.008*bell(x,0,.024)-.014*Math.pow((y-1.54)/.16,2);
     if(name.includes('Abdominal lame')){
       const i=Number(name.match(/lame (\d)/)?.[1]||1)-1,cy=1.405-i*.055-.031;
-      return .017*bell(Math.abs(x),.064,.047)*bell(y,cy,.030)-.003*bell(x,0,.015);
+      return .009*bell(Math.abs(x),.064,.047)*bell(y,cy,.030)-.003*bell(x,0,.015);
     }
-    if(name.includes('thigh plate'))return .020*bell(x,0,.043)*bell(y,.887,.125)-.16*Math.pow(y-.88,2);
-    if(name.includes('shin plate'))return .013*bell(x,0,.019)-.12*Math.pow(y-.36,2);
-    if(name.includes('forearm plate'))return .013*bell(x,0,.026)*bell(y,1.25,.09)-.22*Math.pow(y-1.245,2);
+    if(name.includes('thigh plate'))return .008*bell(x,0,.043)*bell(y,.887,.125)-.16*Math.pow(y-.88,2);
+    if(name.includes('shin plate'))return .007*bell(x,0,.019)-.12*Math.pow(y-.36,2);
+    if(name.includes('forearm plate'))return .007*bell(x,0,.026)*bell(y,1.25,.09)-.22*Math.pow(y-1.245,2);
     return 0;
   }
   function panel(parent,name,outline,z,thickness,material,explode=[0,0,0],curve=.0,curveOrigin=0){
@@ -163,7 +181,6 @@ export function buildSuit(materials = {}) {
     const p1=ellipsoid(groups[1],`${side} shoulder pad`,[s*.263,1.641,.004],[.092,.027,.091],mat.pad,[s*.13,.075,.14]);p1.rotation.z=-s*.3;pads.push(p1);
     pads.push(ellipsoid(groups[1],`${side} elbow pad`,[s*.365,1.359,-.028],[.048,.057,.031],mat.pad,[s*.12,0,.15]));
     pads.push(ellipsoid(groups[1],`${side} knee pad`,[s*.129,.602,.056],[.056,.067,.022],mat.pad,[s*.1,0,.16]));
-    pads.push(ellipsoid(groups[1],`${side} hip pad`,[s*.163,1.055,.005],[.020,.079,.076],mat.pad,[s*.13,0,.12]));
     for(let j=0;j<4;j++)box(groups[1],`${side} knee pad channel ${j+1}`,[s*.129,.565+j*.021,.077],[.07,.003,.002],mat.edge,[s*.1,0,.16]);
     // Concealed sleeve mounts: hook surface on the sleeve, loop on plate back.
     for(const [loc,y,x,z,w,h] of [['forearm',1.239,s*.404,.059,.086,.050],['thigh',.842,s*.148,.098,.123,.052],['shin',.365,s*.15,.064,.089,.053]]){
@@ -175,17 +192,30 @@ export function buildSuit(materials = {}) {
     }
     // Outer limb panels deliberately independent of shoulders, chest and joints.
     const shoulderGeo=new THREE.SphereGeometry(1,64,36,0,Math.PI*2,0,Math.PI*.60);
-    const shoulder=mesh(shoulderGeo,mat.metal,groups[6],`${side} independent shoulder cap`,[s*.30,.075,.36]);shoulder.position.set(s*.258,1.623,.003);shoulder.scale.set(.099,.083,.096);shoulder.rotation.z=-s*.24;remember(shoulder);
+    const shoulder=mesh(shoulderGeo,mat.metal,groups[6],`${side} independent shoulder cap`,[s*.30,.075,.36]);shoulder.position.set(s*.258,1.623,.003);shoulder.scale.set(.095,.076,.092);shoulder.rotation.z=-s*.24;remember(shoulder);
     const innerShoulder=mesh(shoulderGeo.clone(),new THREE.MeshStandardMaterial({color:0x101318,roughness:.70,metalness:.25,side:THREE.BackSide}),groups[6],`${side} shoulder shell inner face`,[s*.30,.075,.36]);innerShoulder.position.copy(shoulder.position);innerShoulder.scale.copy(shoulder.scale).multiplyScalar(.97);innerShoulder.quaternion.copy(shoulder.quaternion);remember(innerShoulder);
     const hemPoints=Array.from({length:65},(_,j)=>{const a=j/64*Math.PI*2,t=Math.PI*.60;return new THREE.Vector3(-Math.cos(a)*Math.sin(t),Math.cos(t),Math.sin(a)*Math.sin(t)).multiply(shoulder.scale).applyQuaternion(shoulder.quaternion).add(shoulder.position).toArray();});
     line(groups[6],`${side} rolled shoulder shell edge`,hemPoints,mat.edge,.0017,[s*.30,.075,.36]);
     const sx=s*.39;
-    const fore=panel(groups[6],`${side} outer forearm plate`,[[sx-.032,1.339],[sx+.032,1.335],[sx+.044,1.316],[sx+.030,1.143],[sx+.010,1.126],[sx-.025,1.14],[sx-.039,1.224]],.070,.005,mat.metal,[s*.32,0,.40],4.2,sx);
+    const fore=panel(groups[6],`${side} outer forearm plate`,[[sx-.032,1.339],[sx+.032,1.335],[sx+.044,1.316],[sx+.030,1.143],[sx+.010,1.126],[sx-.025,1.14],[sx-.039,1.224]],.068,.003,mat.metal,[s*.32,0,.40],4.2,sx);
     const fp=fore.geometry.attributes.position;for(let i=0;i<fp.count;i++)fp.setX(i,fp.getX(i)-s*.23*(fp.getY(i)-1.245));fore.geometry.computeVertexNormals();remember(fore);
     const tx=s*.142;
-    panel(groups[6],`${side} outer thigh plate`,[[tx-.048,1.01],[tx+.041,1.014],[tx+.064,.989],[tx+.055,.76],[tx+.025,.727],[tx-.043,.75],[tx-.066,.916]],.112,.006,mat.metal,[s*.30,0,.39],5,tx);
+    panel(groups[6],`${side} outer thigh plate`,[[tx-.048,1.01],[tx+.041,1.014],[tx+.064,.989],[tx+.055,.76],[tx+.025,.727],[tx-.043,.75],[tx-.066,.916]],.108,.003,mat.metal,[s*.30,0,.39],5,tx);
     const kx=s*.148;
-    panel(groups[6],`${side} shin plate`,[[kx-.033,.53],[kx,.548],[kx+.034,.53],[kx+.037,.234],[kx+.016,.178],[kx-.025,.183],[kx-.037,.248]],.077,.006,mat.metal,[s*.26,0,.38],5,kx);
+    panel(groups[6],`${side} shin plate`,[[kx-.033,.53],[kx,.548],[kx+.034,.53],[kx+.037,.234],[kx+.016,.178],[kx-.025,.183],[kx-.037,.248]],.075,.003,mat.metal,[s*.26,0,.38],5,kx);
+    fittedShell(groups[6],`${side} fitted biceps shell`,[[1.414,s*.341,.061,.060,.005],[1.475,s*.319,.069,.062,.005],[1.535,s*.294,.073,.070,.004],[1.578,s*.280,.074,.070,.003]],mat.metal,[s*.30,.01,.22],-s*.35,s*2.20,.003);
+    fittedShell(groups[6],`${side} fitted hamstring shell`,[[.72,s*.125,.074,.082,.002],[.82,s*.119,.092,.102,.002],[.93,s*.111,.099,.109,.002],[.991,s*.106,.095,.102,0]],mat.metal,[s*.22,0,-.38],Math.PI-.78,Math.PI+.78,.003);
+    for(const [area,y,cx,rx,rz,cz,a,b,ex] of [
+      ['biceps',1.477,s*.318,.067,.060,.005,s*.35,s*1.1,[s*.30,.01,.22]],
+      ['hamstring',.867,s*.116,.092,.102,.002,Math.PI-.40,Math.PI+.40,[s*.22,0,-.38]]
+    ]){
+      fittedShell(hardware,`${side} ${area} sewn sleeve`,[[y-.019,cx,rx-.003,rz-.003,cz],[y+.019,cx,rx-.003,rz-.003,cz]],mat.strap,[s*.075,0,0],a,b,.001);
+      fittedShell(hardware,`${side} ${area} hook on sleeve`,[[y-.016,cx,rx-.002,rz-.002,cz],[y+.016,cx,rx-.002,rz-.002,cz]],mat.hook,[s*.09,0,0],a,b,.001);
+      fittedShell(hardware,`${side} ${area} loop on plate back`,[[y-.016,cx,rx,rz,cz],[y+.016,cx,rx,rz,cz]],mat.strap,ex,a,b,.001);
+    }
+    for(const [label,y,cx,rx,rz,cz] of [['biceps',1.489,s*.314,.073,.068,.005],['forearm',1.252,s*.385,.056,.054,.014],['thigh',.861,s*.117,.102,.110,.002],['shin',.382,s*.146,.064,.071,-.01]]){
+      fittedShell(groups[5],`${side} ${label} full wrap strap`,[[y-.009,cx,rx,rz,cz],[y+.009,cx,rx,rz,cz]],mat.strap,[s*.075,0,0],0,Math.PI*2,.002);
+    }
     // Fingered gloves, flexible wrists, and athletic boot soles.
     ellipsoid(groups[7],`${side} glove palm`,[s*.431,1.064,.031],[.042,.063,.026],mat.rubber,[s*.18,-.025,.16]);
     for(let f=0;f<4;f++){const x=s*(.404+f*.017),y=1.005+(f===0?.01:f===3?.012:0);ellipsoid(groups[7],`${side} glove finger ${f+1}`,[x,y,.034],[.010,.041-(f===3?.007:0),.012],mat.rubber,[s*.18,-.025,.16],16);}
@@ -227,16 +257,17 @@ export function buildSuit(materials = {}) {
     }
 
   }
-  ellipsoid(groups[1],'Optional thin chest trauma pad',[0,1.51,.119],[.15,.137,.009],mat.pad,[0,0,.17]);
+  pads.push(ellipsoid(groups[1],'D3O chest pad',[0,1.51,.129],[.15,.137,.006],mat.pad,[0,0,.17]));
+  pads.push(ellipsoid(groups[1],'D3O back pad',[0,1.46,-.127],[.145,.205,.006],mat.pad,[0,0,-.17]));
   // Soft IIIA wrap is genuinely continuous around the torso.
   rings(groups[2],'Soft ballistic side wrap',[[1.181,.163,.103],[1.30,.18,.119],[1.45,.231,.137],[1.587,.227,.133]],mat.soft,[0,0,.24]);
   const softOutline=[[-.151,1.226],[-.206,1.438],[-.212,1.572],[-.139,1.667],[-.075,1.642],[.075,1.642],[.139,1.667],[.212,1.572],[.206,1.438],[.151,1.226]];
   panel(groups[2],'Soft ballistic front',softOutline,.147,.005,mat.soft,[0,0,.25],1.15);
   const sb=panel(groups[2],'Soft ballistic back',softOutline,.147,.005,mat.soft,[0,0,-.25],1.15);sb.rotation.y=Math.PI;
   const stabOutline=[[-.151,1.241],[-.197,1.42],[-.203,1.566],[-.136,1.642],[-.071,1.611],[.071,1.611],[.136,1.642],[.203,1.566],[.197,1.42],[.151,1.241]];
-  panel(groups[3],'Rigid carbon stab front',stabOutline,.162,.009,mat.carbon,[0,0,.40],1.17);
-  const stabBack=panel(groups[3],'Rigid carbon stab back',stabOutline,.163,.009,mat.carbon,[0,0,-.40],1.17);stabBack.rotation.y=Math.PI;
-  for(const s of [-1,1]){const flank=box(groups[3],`${s<0?'Left':'Right'} rigid stab flank`,[s*.185,1.39,0],[.009,.254,.148],mat.carbon,[s*.23,0,0]);flank.rotation.z=-s*.15;}
+  panel(groups[3],'Rigid carbon stab front',stabOutline,.158,.004,mat.carbon,[0,0,.40],1.17);
+  const stabBack=panel(groups[3],'Rigid carbon stab back',stabOutline,.158,.004,mat.carbon,[0,0,-.40],1.17);stabBack.rotation.y=Math.PI;
+  fittedShell(groups[3],'Left fitted rigid stab flank',[[1.265,0,.177,.116,0],[1.38,0,.215,.138,0],[1.50,0,.236,.145,0]],mat.carbon,[-.23,0,0],-2.05,-1.08,.003);
   // Three rigid lames under the knit; the nape has a deliberate 60-degree opening.
   for(let i=0;i<3;i++){
     const y=1.702+i*.027,rx=.072-i*.003,rz=.065-i*.0015;
@@ -246,9 +277,7 @@ export function buildSuit(materials = {}) {
   // 25 mm harness: the vest stack remains beneath these paths.
   for(const s of [-1,1]){
     const x=s*.137;
-    box(groups[5],`${s<0?'Left':'Right'} front harness webbing`,[x,1.454,.161],[.025,.380,.006],mat.strap,[s*.035,0,.49]);
-    box(groups[5],`${s<0?'Left':'Right'} back harness webbing`,[x,1.454,-.168],[.025,.380,.006],mat.strap,[s*.035,0,-.49]);
-    const top=line(groups[5],'Harness over shoulder',[[x,1.606,.143],[x,1.669,.077],[x,1.68,0],[x,1.669,-.08],[x,1.606,-.151]],mat.strap,.0125);top.userData.explode.set(s*.035,.04,0);
+    shoulderRibbon(`${s<0?'Left':'Right'} continuous shoulder harness`,x,[0,0,.45]);
     // Slide buckles are real frames with central strap, not painted marks.
     for(const [z,d] of [[.18,1],[-.18,-1]]){
       const ex=[s*.035,0,d*.50];
@@ -260,18 +289,26 @@ export function buildSuit(materials = {}) {
     // Inner elastic tracks carry the four independent lames.
     box(hardware,'Inner vertical abdominal elastic strip',[s*.095,1.31,.160],[.022,.212,.007],mat.strap,[s*.03,0,.53]);
   }
-  rings(groups[5],'Harness rib band',[[1.342,.193,.165],[1.367,.197,.167]],mat.strap,[0,0,.48]);
-  rings(groups[5],'Soft waist belt',[[1.1065,.160,.098],[1.1315,.160,.099]],mat.strap,[0,0,.15]);
-  box(groups[5],'Waist belt buckle',[0,1.119,.109],[.051,.027,.014],mat.edge,[0,0,.16]);
+  fittedShell(groups[5],'Continuous upper chest wrap strap',[[1.515,0,.243,.177,0],[1.54,0,.243,.177,0]],mat.strap,[0,0,.45],0,Math.PI*2,.002);
+  fittedShell(groups[5],'Continuous lower rib wrap strap',[[1.335,0,.203,.159,0],[1.360,0,.210,.162,0]],mat.strap,[0,0,.45],0,Math.PI*2,.002);
+  // Floating groin module: soft envelope, separate impact-cup concept, no waist belt.
+  const groinOutline=[[-.062,1.082],[.062,1.082],[.069,1.023],[.038,.945],[0,.920],[-.038,.945],[-.069,1.023]];
+  panel(groups[2],'Floating cut-resistant groin pouch',groinOutline,.111,.004,mat.soft,[0,0,.30],2.5);
+  panel(groups[6],'Removable groin impact cup',[[-.052,1.067],[.052,1.067],[.055,1.018],[.028,.953],[0,.936],[-.028,.953],[-.055,1.018]],.121,.003,mat.metal,[0,0,.44],5);
+  for(const side of [-1,1]){
+    const label=side<0?'Left':'Right';
+    fittedShell(groups[5],`${label} groin soft leg loop`,[[.974,side*.105,.098,.106,0],[.989,side*.105,.098,.106,0]],mat.strap,[0,0,.45],0,Math.PI*2,.002);
+    const tab=line(groups[5],`${label} groin suspension tab`,[[side*.065,1.342,.152],[side*.066,1.21,.101],[side*.052,1.075,.115]],mat.strap,.004,[0,0,.45]);
+  }
   // Chest stops at solar plexus. There is no connection to the abdominal lames.
   const chest=[[-.115,1.654],[-.058,1.628],[.058,1.628],[.115,1.654],[.194,1.604],[.211,1.535],[.191,1.469],[.147,1.429],[.081,1.406],[-.081,1.406],[-.147,1.429],[-.191,1.469],[-.211,1.535],[-.194,1.604]];
-  panel(groups[6],'Independent chest plate',chest,.188,.008,mat.metal,[0,.02,.69],1.50);
-  const back=panel(groups[6],'Independent upper back plate',chest,.182,.008,mat.metal,[0,.02,-.66],1.50);back.rotation.y=Math.PI;
+  panel(groups[6],'Independent chest plate',chest,.180,.004,mat.metal,[0,.02,.69],1.50);
+  const back=panel(groups[6],'Independent upper back plate',chest,.176,.004,mat.metal,[0,.02,-.66],1.50);back.rotation.y=Math.PI;
   // Recessed milled breaks, a central fold and restrained edge lines.
   for(const s of [-1,1]){
-    const groove=line(groups[6],'Chest machined transition',[[s*.16,1.595],[s*.18,1.53],[s*.135,1.45],[s*.072,1.426]].map(([x,y])=>[x,y,.197-1.5*x*x+shellRelief('Independent chest plate',x,y)]),mat.edge,.0012);groove.userData.explode.set(0,.02,.69);
+    const groove=line(groups[6],'Chest machined transition',[[s*.16,1.595],[s*.18,1.53],[s*.135,1.45],[s*.072,1.426]].map(([x,y])=>[x,y,.185-1.5*x*x+shellRelief('Independent chest plate',x,y)]),mat.edge,.0012);groove.userData.explode.set(0,.02,.69);
     for(const yy of [1.602,1.454]){
-      const x=s*.133,z=.197-1.50*x*x+shellRelief('Independent chest plate',x,yy);
+      const x=s*.133,z=.185-1.50*x*x+shellRelief('Independent chest plate',x,yy);
       box(hardware,'Torso recessed strap slot',[x,yy,z],[.038,.012,.004],mat.edge,[0,.02,.69]);
       box(hardware,'Harness strap threaded through chest slot',[x,yy,z+.003],[.025,.008,.005],mat.strap,[0,.02,.69]);
       for(const dx of [-.021,.021])box(hardware,'Chest slot metal rim',[x+dx,yy,z],[.002,.014,.005],mat.fastener,[0,.02,.69]);
@@ -281,8 +318,8 @@ export function buildSuit(materials = {}) {
   }
   const abdominal=[];
   for(let i=0;i<4;i++){
-    const top=1.405-i*.055,bottom=top-.067,w=.171-i*.007,z=.193-i*.004;
-    const a=panel(groups[6],`Abdominal lame ${i+1} — 70 mm, 15 mm overlap`,[[-w,top],[-w+.015,bottom+.008],[-w*.50,bottom],[w*.50,bottom],[w-.015,bottom+.008],[w,top]],z,.007,mat.metal,[0,-i*.012,.72+i*.08],1.0);abdominal.push(a);
+    const top=1.405-i*.055,bottom=top-.067,w=.171-i*.007,z=.179-i*.004;
+    const a=panel(groups[6],`Abdominal lame ${i+1} — 70 mm, 15 mm overlap`,[[-w,top],[-w+.015,bottom+.008],[-w*.50,bottom],[w*.50,bottom],[w-.015,bottom+.008],[w,top]],z,.004,mat.metal,[0,-i*.012,.72+i*.08],1.0);abdominal.push(a);
     for(const s of [-1,1]){
       const x=s*.095,yy=top-.018,ex=[0,-i*.012,.72+i*.08];
       box(hardware,`Abdominal lame ${i+1} vertical travel slot`,[x,yy,z-.004],[.008,.025,.007],mat.edge,ex);
@@ -297,6 +334,7 @@ export function buildSuit(materials = {}) {
   }
   // Optional hanging tasset omitted: the unplated waist remains uninterrupted.
   groups.forEach((g,i)=>g.traverse(o=>{if(o.isMesh)o.userData.layer=i;}));
+  for(const m of parts){if(m.userData.layer===0)m.userData.explode.set(0,0,0);if(m.userData.layer===5)m.userData.explode.set(0,0,.45);}
   const components=new Map();
   for(const m of [...parts,...hardwareParts]){
     const n=m.name,side=n.startsWith('Left')?'left':n.startsWith('Right')?'right':null,layer=m.userData.layer;
@@ -307,8 +345,13 @@ export function buildSuit(materials = {}) {
       else if(/chest|Chest|Torso recessed|Harness strap threaded/.test(n)){id='chest';label='Pectoral chest plate';}
       else if(/back plate|Back plate|Back harness/.test(n)){id='back';label='Upper back plate';}
       else if(side&&/shoulder/.test(n)){id=side+'-shoulder';label=side+' shoulder cap';}
-      else if(side&&/forearm|thigh|shin/.test(n)&&(!m.userData.hardware||n.includes('loop on plate back'))){const area=n.match(/forearm|thigh|shin/)[0];id=side+'-'+area;label=side+' '+area+' plate';}
+      else if(side&&/biceps|hamstring|forearm|thigh|shin/.test(n)&&(!m.userData.hardware||n.includes('loop on plate back'))){const area=n.match(/biceps|hamstring|forearm|thigh|shin/)[0];id=side+'-'+area;label=side+' '+area+' plate';}
     }
+    if(layer===0){id='cutlon';label='Cutlon base garment';}
+    if(/groin/i.test(n)){id=layer===6?'groin-cup':layer===2?'groin-pouch':'groin-support';label=layer===6?'Removable groin impact cup':layer===2?'Floating cut-resistant groin pouch':'Groin suspension and soft leg loops';}
+    if(layer===5&&!id&&!/groin/i.test(n)){id='harness';label='Continuous wraparound harness';}
+    if(layer===1){const zone=/shoulder|elbow|knee|chest|back/.exec(n.toLowerCase())?.[0];id='d3o-'+(side?side+'-':'')+zone;label='D3O '+(side?side+' ':'')+zone+' pad';}
+    if(layer===4){const number=n.match(/lame (\d)/)?.[1];id='neck-'+number;label='Concealed neck lame '+number;}
     if(layer===7){const glove=/glove|NETFORCE|knuckle|finger/.test(n);id=side+(glove?'-glove':'-boot');label=side+(glove?' NETFORCE-style glove':' athletic boot');}
     if(!id)id='mesh-'+m.id;
     m.userData.component=id;

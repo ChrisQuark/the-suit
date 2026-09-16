@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-export const LAYER_COLORS=[0x94a3b8,0xff721b,0x9665e8,0x20b9dd,0xe776cd,0xe9c64b,0x287ff0,0x32c4a2];
-export const LAYER_COLOR_NAMES=['Slate knit','Orange impact pads','Purple soft vest','Cyan stab panels','Pink neck lames','Yellow webbing','Blue outer plates','Teal gloves & boots'];
+export const LAYER_COLORS=[0x686b59,0xa46a39,0x7f7866,0x59695d,0x786d67,0x938261,0x4c6571,0x555e45];
+export const LAYER_COLOR_NAMES=['Olive-gray knit','Burnt-ochre impact pads','Taupe soft vest','Field-green stab panels','Earth-tone neck lames','Khaki webbing','Slate-blue outer plates','Ranger-green gloves & boots'];
 export const FULL_ORBIT={min:.20,max:Math.PI*.485};
 
 export function desiredOpacity(part,state){
@@ -18,7 +18,7 @@ export function desiredOpacity(part,state){
   return 1;
 }
 export function applyAssemblyPose(suit,separation){
-  for(const m of [...suit.parts,...suit.hardwareParts])m.position.copy(m.userData.rest).addScaledVector(m.userData.explode,separation);
+  for(const m of [...suit.parts,...suit.hardwareParts])m.position.copy(m.userData.rest).addScaledVector(m.userData.explode,m.userData.layer===0?0:separation);
   suit.root.updateMatrixWorld(true);
 }
 export function fitComponent(component,camera){

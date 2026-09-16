@@ -6,6 +6,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { LAYER_COLORS, LAYER_COLOR_NAMES, FULL_ORBIT, desiredOpacity, applyAssemblyPose, fitComponent } from './inspection.js';
+import { PRODUCTS, componentProduct } from './products.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const $=id=>document.getElementById(id);
@@ -35,11 +37,14 @@ function updateUI(){
   $('annotation').hidden=!state.hardware&&state.selected!==4;
   $('annotation-text').textContent=state.hardware?'Straps through slots. Sliding rivets. Hook-and-loop sleeves.':'Three rigid lames beneath the knit. Open at the nape.';
 }
+function featureMarkup(product){
+ return `<section class="product-features"><h3>${product.name}</h3><ul>${product.features.map(f=>`<li>${f}</li>`).join('')}</ul>${product.sources.length?`<div class="product-sources">${product.sources.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.name} ↗</a>`).join('')}</div>`:''}<p class="detail-note">${product.note}</p></section>`;
+}
 function showDetail(i){
-  $('details').classList.toggle('has-selection',i!==null);$('close-detail').hidden=i===null;$('detail-actions').hidden=i===null;
+  document.body.classList.toggle('inspecting',i!==null);$('details').classList.toggle('has-selection',i!==null);$('close-detail').hidden=i===null;$('detail-actions').hidden=i===null;
   if(i===null){$('detail-index').textContent='SYSTEM / 001';$('detail-title').innerHTML='Built in layers.<br>Free to move.';$('detail-description').textContent='A close study of protection, articulation, and the space between them.';$('detail-extra').innerHTML='<p class="overview-note">Select a layer or a part of the suit to look beneath the surface.</p><div class="overview-stats"><div><strong>08</strong><span>Independent layers</span></div><div><strong>04</strong><span>Sliding abdominal lames</span></div></div>';return;}
   const l=LAYERS[i];$('detail-index').textContent=`LAYER ${String(i+1).padStart(2,'0')} / ${String(LAYERS.length).padStart(2,'0')}`;$('detail-title').textContent=l.title;$('detail-description').textContent=l.description;
-  $('detail-extra').innerHTML=`<dl class="detail-specs"><div><dt>Material</dt><dd>${l.material}</dd></div><div><dt>Construction</dt><dd>${l.build}</dd></div><div><dt>Attachment</dt><dd>${l.attachment}</dd></div></dl><p class="detail-note">${l.note}</p>`;
+  $('detail-extra').innerHTML=featureMarkup(PRODUCTS[i])+`<dl class="detail-specs"><div><dt>Material</dt><dd>${l.material}</dd></div><div><dt>Construction</dt><dd>${l.build}</dd></div><div><dt>Attachment</dt><dd>${l.attachment}</dd></div></dl><p class="detail-note">${l.note}</p>`;
 }
 function selectLayer(i){exitPiece(false);stopPeel();state.selected=i;state.isolate=false;if(i!==null)state.hidden.delete(i);if(focusLayer){focusLayer=false;setCamera('full');}showDetail(i);updateUI();}
 function stopPeel(){state.peeling=false;state.peelStage=8;clearInterval(peelTimer);peelTimer=null;}
@@ -49,7 +54,7 @@ function setCamera(mode='full'){
   const mobile=window.innerWidth<=760;
   let target=new THREE.Vector3(0,1.0,0),p;
   if(mode==='focus'&&state.selected!==null){const l=LAYERS[state.selected];target.set(...l.focus);target.z+=state.separation*.35;p=target.clone().add(new THREE.Vector3(l.distance*.23,l.distance*.08,l.distance));}
-  else{const dist=state.separation>0?(mobile?4.8:4.65):4.05;const exploded=state.separation>0&&mode==='full';p=new THREE.Vector3(mode==='front'?0:mode==='back'?0:dist*(exploded?.78:.26),1.12,mode==='back'?-dist:dist*(exploded?.78:1));}
+  else{const dist=Math.max(state.separation>0?(mobile?4.8:4.65):4.05,(state.separation>0?1.85:1.05)/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2)*Math.max(.25,camera.aspect))*1.12);controls.maxDistance=Math.max(8,dist*1.4);const exploded=state.separation>0&&mode==='full';p=new THREE.Vector3(mode==='front'?0:mode==='back'?0:dist*(exploded?.78:.26),1.12,mode==='back'?-dist:dist*(exploded?.78:1));}
   cameraTween={start:performance.now(),from:camera.position.clone(),to:p,fromTarget:controls.target.clone(),toTarget:target};
   if(reduced){camera.position.copy(p);controls.target.copy(target);cameraTween=null;}
   $('view-label').textContent=mode==='back'?'BACK VIEW':mode==='front'?'FRONT VIEW':mode==='focus'?'DETAIL / INSPECTION':'FRONT / THREE-QUARTER';
@@ -84,7 +89,7 @@ function exitPiece(restore=true){
 function framePiece(view='front'){
   const c=suit?.components.get(state.selectedPart);if(!c)return;
   applyAssemblyPose(suit,state.separation);
-  const fit=fitComponent(c,camera),isBack=c.id==='back';
+  const fit=fitComponent(c,camera),isBack=c.id==='back'||c.id.includes('hamstring')||c.id==='d3o-back';
   const direction=new THREE.Vector3(.25,.14,(view==='back'?-1:1)*(isBack?-1:1)).normalize();
   controls.minDistance=Math.max(.04,fit.radius*1.15+camera.near);controls.maxDistance=Math.max(2,fit.distance*4);controls.minPolarAngle=.01;controls.maxPolarAngle=Math.PI-.01;
   cameraTween={start:performance.now(),from:camera.position.clone(),to:fit.center.clone().addScaledVector(direction,fit.distance),fromTarget:controls.target.clone(),toTarget:fit.center};
@@ -94,7 +99,8 @@ function selectPiece(id){
   if(!state.selectedPart)pieceReturn={position:camera.position.clone(),target:controls.target.clone(),selected:state.selected,hardware:state.hardware};
   stopPeel();state.selectedPart=id;state.selected=c.layer;state.hardware=false;state.isolate=false;state.autoRotate=false;currentSeparation=state.separation;
   showDetail(c.layer);$('detail-title').textContent=c.name;$('detail-index').textContent='INDIVIDUAL COMPONENT';$('piece-name').textContent=c.name;
-  $('detail-description').textContent='Drag to orbit this component from any angle. Scroll to zoom, or return to the assembly.';
+  $('detail-description').textContent='Drag to rotate. Scroll to zoom. This piece is highlighted for inspection.';
+  $('detail-extra').innerHTML=featureMarkup(componentProduct(c))+`<dl class="detail-specs"><div><dt>Attachment</dt><dd>${LAYERS[c.layer].attachment}</dd></div></dl>`;
   $('piece-picker').value=id;framePiece();updateUI();
 }
 $('colors').addEventListener('click',()=>{state.colors=!state.colors;updateUI();});
@@ -133,7 +139,7 @@ async function init3D(){
   suit=buildSuit();
   suit.root.traverse(m=>{if(!m.isMesh)return;m.material=m.material.clone();m.userData.baseColor=m.material.color.clone();m.userData.baseMetalness=m.material.metalness;m.userData.baseRoughness=m.material.roughness;m.userData.baseMap=m.material.map;m.userData.colorMode=false;m.material.envMapIntensity=m.userData.layer===6?1.15:.48;m.userData.opacity=1;});
   $('piece-picker').disabled=false;
-  $('piece-picker').innerHTML='<option value="">Inspect a piece…</option>'+[...suit.components.values()].filter(c=>c.layer===6||c.layer===7).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  $('piece-picker').innerHTML='<option value="">Inspect a piece…</option>'+[...suit.components.values()].filter(c=>c.meshes.some(m=>!m.userData.hardware)).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   suit.collarKnits.forEach(p=>p.userData.isCollar=true);scene.add(suit.root);
   const floor=new THREE.Mesh(new THREE.CircleGeometry(3,96),new THREE.MeshStandardMaterial({color:0x07080a,roughness:.72,metalness:.12,transparent:true,opacity:.92,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.008;floor.receiveShadow=true;scene.add(floor);
 
@@ -143,14 +149,14 @@ async function init3D(){
   // Keep normals-based occlusion out of transparent layer inspection.
   const target=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType});target.samples=Math.min(4,renderer.capabilities.maxSamples);
   const composer=new EffectComposer(renderer,target);composer.addPass(new RenderPass(scene,camera));
-  const occlusion=new SSAOPass(scene,camera,1,1,mobile?12:24);occlusion.kernelRadius=.055;occlusion.minDistance=.000025;occlusion.maxDistance=.0015;composer.addPass(occlusion);composer.addPass(new OutputPass());
-  const observer=new ResizeObserver(()=>{const b=$('viewport').getBoundingClientRect();renderer.setSize(b.width,b.height,false);camera.aspect=b.width/b.height;camera.updateProjectionMatrix();composer.setSize(b.width,b.height);if(state.selectedPart)framePiece();});observer.observe($('viewport'));
+  const occlusion=new SSAOPass(scene,camera,1,1,mobile?12:24);occlusion.kernelRadius=.055;occlusion.minDistance=.000025;occlusion.maxDistance=.0015;composer.addPass(occlusion);const glow=new UnrealBloomPass(new THREE.Vector2(1,1),.40,.55,.18);glow.enabled=false;composer.addPass(glow);composer.addPass(new OutputPass());
+  const observer=new ResizeObserver(()=>{const b=$('viewport').getBoundingClientRect();renderer.setSize(b.width,b.height,false);camera.aspect=b.width/b.height;camera.updateProjectionMatrix();composer.setSize(b.width,b.height);if(state.selectedPart)framePiece();else if(!focusLayer)setCamera('full');});observer.observe($('viewport'));
   const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();let down=null;
   $('scene').addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY};});
   $('scene').addEventListener('pointerup',e=>{
     if(!down||Math.hypot(e.clientX-down.x,e.clientY-down.y)>5)return;
     const b=$('scene').getBoundingClientRect();mouse.set((e.clientX-b.left)/b.width*2-1,-(e.clientY-b.top)/b.height*2+1);raycaster.setFromCamera(mouse,camera);
-    const hits=raycaster.intersectObjects(suit.parts).filter(h=>h.object.visible&&h.object.material.opacity>.4);if(hits.length){const m=hits[0].object;if(state.separation>.025||state.selectedPart)selectPiece(m.userData.component);else selectLayer(m.userData.layer);}
+    const hits=raycaster.intersectObjects([...suit.parts,...suit.hardwareParts]).filter(h=>h.object.visible&&h.object.material.opacity>.4);if(hits.length){const m=hits[0].object;selectPiece(m.userData.component);}
   });
   $('scene').addEventListener('keydown',e=>{
     if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','+','=','-','0'].includes(e.key))return;e.preventDefault();cameraTween=null;
@@ -167,17 +173,17 @@ async function init3D(){
       const target=desiredOpacity(m,state);if(state.selectedPart)m.userData.opacity=target;else m.userData.opacity+=(target-m.userData.opacity)*ease;m.visible=m.userData.opacity>.012;
       m.material.opacity=m.userData.opacity;m.material.transparent=m.userData.opacity<.995;m.material.depthWrite=m.userData.opacity>.75;
       if(m.userData.colorMode!==state.colors){m.userData.colorMode=state.colors;m.material.map=state.colors?null:m.userData.baseMap;m.material.metalness=state.colors?.05:m.userData.baseMetalness;m.material.roughness=state.colors?.67:m.userData.baseRoughness;m.material.needsUpdate=true;}
-      const ex=m.userData.explode;m.position.copy(m.userData.rest).addScaledVector(ex,currentSeparation);
+      const ex=m.userData.explode;m.position.copy(m.userData.rest).addScaledVector(ex,m.userData.layer===0?0:currentSeparation);
       if(state.peeling&&m.userData.layer>state.peelStage)m.position.addScaledVector(ex,.4);
       if(state.hardware&&m.userData.hardware&&!state.colors){m.material.color.lerp(new THREE.Color(0xb8cdaa),ease);if(m.material.emissive){m.material.emissive.setHex(0x597747);m.material.emissiveIntensity=.25;}}
-      else{m.material.color.lerp(state.colors?new THREE.Color(LAYER_COLORS[m.userData.layer]):m.userData.baseColor,ease);if(m.material.emissive)m.material.emissiveIntensity=0;}
+      else{m.material.color.lerp(state.colors?new THREE.Color(LAYER_COLORS[m.userData.layer]):m.userData.baseColor,ease);if(m.material.emissive){const selected=state.selectedPart===m.userData.component;m.material.emissive.setHex(selected?0xb0bd98:0x000000);m.material.emissiveIntensity=selected?.28:0;}}
     }
     suit.mannequin.visible=!state.selectedPart;
     floor.visible=contact.visible=!state.selectedPart&&currentSeparation<.01;
     // The mannequin is the stable reference for exploded and isolated views.
     suit.mannequin.traverse(m=>{if(!m.isMesh)return;const alpha=state.isolate?.24:1;m.material.transparent=alpha<1;m.material.opacity=alpha;m.material.depthWrite=alpha===1;});
     if(cameraTween){const f=Math.min((t-cameraTween.start)/(reduced?1:900),1),e=f*f*(3-2*f);camera.position.lerpVectors(cameraTween.from,cameraTween.to,e);controls.target.lerpVectors(cameraTween.fromTarget,cameraTween.toTarget,e);if(f===1)cameraTween=null;}
-    controls.autoRotate=state.autoRotate&&!cameraTween;controls.update(dt);occlusion.enabled=!state.selectedPart&&state.selected===null&&!state.hardware&&!state.peeling&&currentSeparation<.005&&state.hidden.size===0;composer.render(dt);frameHandle=requestAnimationFrame(frame);
+    controls.autoRotate=state.autoRotate&&!cameraTween;controls.update(dt);occlusion.enabled=!state.selectedPart&&state.selected===null&&!state.hardware&&!state.peeling&&currentSeparation<.005&&state.hidden.size===0;glow.enabled=!!state.selectedPart;composer.render(dt);frameHandle=requestAnimationFrame(frame);
   }
   frameHandle=requestAnimationFrame(frame);
   document.addEventListener('visibilitychange',()=>{if(document.hidden){cancelAnimationFrame(frameHandle);}else{previous=performance.now();frameHandle=requestAnimationFrame(frame);}});
