@@ -100,7 +100,8 @@ function selectPiece(id){
   stopPeel();state.selectedPart=id;state.selected=c.layer;state.hardware=false;state.isolate=false;state.autoRotate=false;currentSeparation=state.separation;
   showDetail(c.layer);$('detail-title').textContent=c.name;$('detail-index').textContent='INDIVIDUAL COMPONENT';$('piece-name').textContent=c.name;
   $('detail-description').textContent='Drag to rotate. Scroll to zoom. This piece is highlighted for inspection.';
-  $('detail-extra').innerHTML=featureMarkup(componentProduct(c))+`<dl class="detail-specs"><div><dt>Attachment</dt><dd>${LAYERS[c.layer].attachment}</dd></div></dl>`;
+  const product=componentProduct(c);
+  $('detail-extra').innerHTML=featureMarkup(product)+`<dl class="detail-specs"><div><dt>Attachment</dt><dd>${product.attachment||LAYERS[c.layer].attachment}</dd></div></dl>`;
   $('piece-picker').value=id;framePiece();updateUI();
 }
 $('colors').addEventListener('click',()=>{state.colors=!state.colors;updateUI();});
