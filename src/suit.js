@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ghostGeometry, deformGeometry, limbSurface } from './ghost.js';
 
 // Deterministic microstructure stays self-contained, with no downloaded textures.
 function surface(kind, repeats=8){
@@ -25,7 +26,9 @@ export function buildSuit(materials = {}) {
     knit:new THREE.MeshPhysicalMaterial({color:0x17191b,roughness:.93,metalness:0,bumpMap:knitMap,bumpScale:.00032,sheen:.22,sheenColor:0x535966,sheenRoughness:.85}),
     seam:new THREE.MeshStandardMaterial({color:0x25272a,roughness:.96}),
     skin:new THREE.MeshStandardMaterial({color:0x16191d,roughness:.38,metalness:.16}),
-    pad:new THREE.MeshStandardMaterial({color:0x242626,roughness:.92,bumpMap:rubberMap,bumpScale:.0005}),
+    pad:new THREE.MeshPhysicalMaterial({color:0xd57619,roughness:.59,metalness:0,clearcoat:.08,clearcoatRoughness:.6,bumpMap:rubberMap,bumpScale:.000045}),
+    padBacking:new THREE.MeshStandardMaterial({color:0x111518,roughness:.98,bumpMap:knitMap,bumpScale:.00012}),
+    pocket:new THREE.MeshPhysicalMaterial({color:0x202326,roughness:.91,bumpMap:knitMap,bumpScale:.0002,sheen:.18}),
     soft:new THREE.MeshStandardMaterial({color:0x242629,roughness:.96,bumpMap:nylonMap,bumpScale:.0005}),
     carbon:new THREE.MeshStandardMaterial({color:0x27292c,roughness:.44,metalness:.28,map:carbonMap,bumpMap:carbonMap,bumpScale:.00025}),
     strap:new THREE.MeshStandardMaterial({color:0x17191b,roughness:.96,bumpMap:nylonMap,bumpScale:.0006}),
@@ -66,6 +69,7 @@ export function buildSuit(materials = {}) {
     return mesh(g,material,parent,name,explode);
   }
   function fittedShell(parent,name,rows,material,explode,start=-Math.PI,end=Math.PI,thickness=.003){
+    if(rows.length>2){const centers=new THREE.CatmullRomCurve3(rows.map(r=>new THREE.Vector3(r[1],r[0],r[4]||0))),radii=new THREE.SplineCurve(rows.map(r=>new THREE.Vector2(r[2],r[3])));rows=Array.from({length:25},(_,i)=>{const c=centers.getPoint(i/24),r=radii.getPoint(i/24);return [c.y,c.x,r.x,r.y,c.z];});}
     const N=48,R=rows.length,vs=[],uv=[],idx=[];
     for(let side=0;side<2;side++)for(let r=0;r<R;r++)for(let j=0;j<=N;j++){
       const [y,cx,rx,rz,cz=0]=rows[r],a=start+(end-start)*j/N,t=side?-thickness:0;
@@ -126,7 +130,9 @@ export function buildSuit(materials = {}) {
       const a=[p[0]+(prev[0]-p[0])*rounding,p[1]+(prev[1]-p[1])*rounding],b=[p[0]+(next[0]-p[0])*rounding,p[1]+(next[1]-p[1])*rounding];
       if(i===0)shape.moveTo(...a);else shape.lineTo(...a);shape.quadraticCurveTo(...p,...b);
     }shape.closePath();
-    let geo=new THREE.ExtrudeGeometry(shape,{depth:thickness,bevelEnabled:true,bevelThickness:.0015,bevelSize:.0015,bevelSegments:4,steps:1,curveSegments:12});
+    const isCarrier=name.startsWith('Hyperline'),bevel=isCarrier?Math.min(thickness*.12,.00035):.0015;
+    let geo=new THREE.ExtrudeGeometry(shape,{depth:isCarrier?thickness-2*bevel:thickness,bevelEnabled:true,bevelThickness:bevel,bevelSize:bevel,bevelSegments:4,steps:1,curveSegments:12});
+    if(isCarrier)geo.translate(0,0,bevel);
     // Subdivide broad faces before bending, so the shell follows the body
     // instead of creating flat chords that intersect the underlying garment.
     if(curve){for(let step=0;step<4;step++){
@@ -151,6 +157,20 @@ export function buildSuit(materials = {}) {
     return mesh(geo,material,parent,name,explode);
   }
   function line(parent,name,points,material,radius=.0013,explode=[0,0,0]){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));return mesh(new THREE.TubeGeometry(curve,24,radius,5,false),material,parent,name,explode);}
+  function ghostPad(name,kind,map,explode){
+    const g=ghostGeometry(kind);
+    let main;
+    for(const [key,material] of [['backing',mat.padBacking],['lattice',mat.pad],['rim',mat.pad]]){
+      const m=mesh(deformGeometry(g[key],map),material,groups[1],`${name} ${key}`,explode);
+      m.userData.ghostKind=kind;m.userData.keepDark=key==='backing';m.userData.catalogDimensions=[g.spec.width,g.spec.height,g.spec.thickness];
+      if(key==='lattice'){main=m;main.userData.cellCount=g.cellCount;pads.push(main);}
+    }
+    const pocket=mesh(deformGeometry(g.pocket,map),mat.pocket,groups[0],`${name} external Cutlon pocket`);pocket.userData.isPadPocket=true;
+    const edge=g.pocketOutline.map(([u,v])=>map(u,v,g.spec.thickness+.002));edge.push(edge[0]);
+    const seam=line(groups[0],`${name} pocket flatlock seam`,edge,mat.seam,.00055);seam.userData.isPadPocket=true;
+    const lip=line(groups[0],`${name} pocket insertion opening`,[-1,-.5,0,.5,1].map(t=>map(t*g.spec.width*.19,g.spec.height*.33,g.spec.thickness+.0025)),mat.strap,.0011);lip.userData.isPadPocket=true;
+    return main;
+  }
   // Neutral head and a complete under-body prevent voids when layers are removed.
   const headProfile=new THREE.CatmullRomCurve3([new THREE.Vector3(.040,1.785,.052),new THREE.Vector3(.061,1.805,.068),new THREE.Vector3(.077,1.85,.077),new THREE.Vector3(.079,1.92,.075),new THREE.Vector3(.060,1.959,.056),new THREE.Vector3(.016,1.976,.018)]);
   rings(mannequin,'Sculpted featureless mannequin head',headProfile.getPoints(36).map(p=>[p.y,p.x,p.z,-.001]),mat.skin);
@@ -177,11 +197,13 @@ export function buildSuit(materials = {}) {
     line(groups[0],`${side} torso seam`,[[s*.155,1.08,.047],[s*.16,1.27,.058],[s*.195,1.44,.077],[s*.194,1.59,.084]],mat.seam,.001,[0,0,-.05]);
     // Narrow compression wrinkles follow the joint, with sewn garment seams.
     line(groups[0],`${side} sleeve flatlock`,[[s*.321,1.51,.065],[s*.347,1.40,.053],[s*.375,1.29,.060],[s*.411,1.14,.055]],mat.seam,.0008,[s*.055,0,-.035]);
-    // Low-profile pads concealed until layer or exploded inspection.
-    const p1=ellipsoid(groups[1],`${side} shoulder pad`,[s*.263,1.641,.004],[.092,.027,.091],mat.pad,[s*.13,.075,.14]);p1.rotation.z=-s*.3;pads.push(p1);
-    pads.push(ellipsoid(groups[1],`${side} elbow pad`,[s*.365,1.359,-.028],[.048,.057,.031],mat.pad,[s*.12,0,.15]));
-    pads.push(ellipsoid(groups[1],`${side} knee pad`,[s*.129,.602,.056],[.056,.067,.022],mat.pad,[s*.1,0,.16]));
-    for(let j=0;j<4;j++)box(groups[1],`${side} knee pad channel ${j+1}`,[s*.129,.565+j*.021,.077],[.07,.003,.002],mat.edge,[s*.1,0,.16]);
+    // Ghost L2 inserts follow the real flat patterns and sit in exterior Cutlon pockets.
+    ghostPad(`${side} Ghost shoulder`,'shoulder',(u,v,w)=>{
+      const a=u/.079,b=(v+.018)/.108;
+      return [s*(.249+(.073+w)*Math.cos(a)*Math.cos(b)),1.598+(.083+w)*Math.sin(b),(.079+w)*Math.sin(a)];
+    },[s*.15,.07,.13]);
+    ghostPad(`${side} Ghost elbow`,'limb',limbSurface({cx:s*.355,cy:1.36,cz:.003,radius:.061,back:true,lean:-s*.27}),[s*.15,0,-.20]);
+    ghostPad(`${side} Ghost knee`,'limb',limbSurface({cx:s*.131,cy:.61,cz:.005,radius:.074,lean:-s*.035}),[s*.13,0,.23]);
     // Concealed sleeve mounts: hook surface on the sleeve, loop on plate back.
     for(const [loc,y,x,z,w,h] of [['forearm',1.239,s*.404,.059,.086,.050],['thigh',.842,s*.148,.098,.123,.052],['shin',.365,s*.15,.064,.089,.053]]){
       const ex=[s*.32,0,.40];
@@ -238,6 +260,14 @@ export function buildSuit(materials = {}) {
       for(let j=0;j<N;j++){const a=row*(N+1)+j,b=a+1;if(row===0)bi.push(center,b,a);else bi.push(center,a,b);}
     }
     const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(bp,3));bg.setAttribute('uv',new THREE.Float32BufferAttribute(bu,2));bg.setIndex(bi);bg.computeVertexNormals();mesh(bg,mat.rubber,groups[7],`${side} sculpted athletic boot`,[s*.14,.035,.13]);
+    const sock=bg.clone(),sp=sock.attributes.position;
+    for(let i=0;i<sp.count;i++){sp.setX(i,s*.153+(sp.getX(i)-s*.153)*.88);sp.setY(i,Math.max(.040,sp.getY(i)-.020));}sock.computeVertexNormals();mesh(sock,mat.knit,groups[0],`${side} Cutlon foot sleeve`);
+    ghostPad(`${side} Ghost met guard`,'met',(u,v,w)=>{
+      const z=.106-v;let j=0;while(j<bootRows.length-2&&bootRows[j+1][0]<z)j++;
+      const A=bootRows[j],B=bootRows[j+1],t=THREE.MathUtils.clamp((z-A[0])/(B[0]-A[0]),0,1),r=A.map((x,i)=>THREE.MathUtils.lerp(x,B[i],t));
+      const x=.075*Math.sin(u/.075),top=r[2]+r[3]*Math.sqrt(Math.max(.03,1-(x/r[1])**2));
+      return [s*.153+x,top-.013+w,z];
+    },[s*.12,.10,.25]);
     for(const d of [-1,1])line(groups[7],`${side} bonded boot quarter seam ${d}`,[[s*.153+d*.051,.115,-.03],[s*.153+d*.060,.118,.035],[s*.153+d*.062,.089,.092],[s*.153+d*.055,.080,.161]],mat.seam,.00085,[s*.14,.035,.13]);
     const soleShape=new THREE.Shape();soleShape.moveTo(-.035,-.065);soleShape.quadraticCurveTo(-.07,-.065,-.07,-.02);soleShape.lineTo(-.07,.16);soleShape.quadraticCurveTo(-.07,.215,0,.215);soleShape.quadraticCurveTo(.07,.215,.07,.16);soleShape.lineTo(.07,-.02);soleShape.quadraticCurveTo(.07,-.065,.035,-.065);soleShape.closePath();
     const sole=mesh(new THREE.ExtrudeGeometry(soleShape,{depth:.021,bevelEnabled:true,bevelThickness:.003,bevelSize:.002,bevelSegments:2,steps:1,curveSegments:16}),mat.edge,groups[7],`${side} rounded athletic sole`,[s*.14,.035,.13]);sole.rotation.x=Math.PI/2;sole.position.set(s*.153,.041,0);remember(sole);
@@ -257,13 +287,30 @@ export function buildSuit(materials = {}) {
     }
 
   }
-  pads.push(ellipsoid(groups[1],'D3O chest pad',[0,1.51,.129],[.15,.137,.006],mat.pad,[0,0,.17]));
-  pads.push(ellipsoid(groups[1],'D3O back pad',[0,1.46,-.127],[.145,.205,.006],mat.pad,[0,0,-.17]));
-  // Soft IIIA wrap is genuinely continuous around the torso.
-  rings(groups[2],'Soft ballistic side wrap',[[1.181,.163,.103],[1.30,.18,.119],[1.45,.231,.137],[1.587,.227,.133]],mat.soft,[0,0,.24]);
-  const softOutline=[[-.151,1.226],[-.206,1.438],[-.212,1.572],[-.139,1.667],[-.075,1.642],[.075,1.642],[.139,1.667],[.212,1.572],[.206,1.438],[.151,1.226]];
-  panel(groups[2],'Soft ballistic front',softOutline,.147,.005,mat.soft,[0,0,.25],1.15);
-  const sb=panel(groups[2],'Soft ballistic back',softOutline,.147,.005,mat.soft,[0,0,-.25],1.15);sb.rotation.y=Math.PI;
+  ghostPad('Ghost chest','chest',(u,v,w)=>[.24*Math.sin(u/.24),1.485+v,.124+(.24+w)*Math.cos(u/.24)-.24-.18*v*v],[0,0,.22]);
+  ghostPad('Ghost back','back',(u,v,w)=>[.235*Math.sin(u/.235),1.455+v,-(.122+(.235+w)*Math.cos(u/.235)-.235-.20*v*v)],[0,0,-.23]);
+  // Hyper Concealable reference: scoop neck, high armholes, soft hem and six closures.
+  const softOutline=[[-.160,1.205],[-.205,1.245],[-.217,1.390],[-.194,1.441],[-.185,1.553],[-.167,1.665],[-.106,1.659],[-.071,1.601],[0,1.590],[.071,1.601],[.106,1.659],[.167,1.665],[.185,1.553],[.194,1.441],[.217,1.390],[.205,1.245],[.160,1.205]];
+  for(const d of [-1,1]){
+    const label=d>0?'front':'back',ex=[0,0,d*.27];
+    const carrier=panel(groups[2],`Hyperline ${label} brushed carrier`,softOutline,.145,.000762,mat.soft,ex,1.15);if(d<0)carrier.rotation.y=Math.PI;
+    const insertOutline=softOutline.map(([x,y])=>[x*.965,1.43+(y-1.43)*.962]);
+    const insert=panel(groups[2],`Hyperline ${label} 4.83 mm soft insert`,insertOutline,.1386,.004826,mat.padBacking,ex,1.15);if(d<0)insert.rotation.y=Math.PI;
+    const binding=softOutline.map(([x,y])=>[x,y,d*(.147-1.15*x*x)]);binding.push(binding[0]);line(groups[2],`Hyperline ${label} flat stitched binding`,binding,mat.seam,.0008,ex);
+    const chestSeam=[[-.163,1.524],[-.090,1.548],[0,1.557],[.090,1.548],[.163,1.524]].map(([x,y])=>[x,y,d*(.148-1.15*x*x)]);line(groups[2],`Hyperline ${label} yoke seam`,chestSeam,mat.seam,.00055,ex);
+  }
+  for(const side of [-1,1]){
+    const label=side<0?'Left':'Right';
+    fittedShell(groups[2],`Hyperline ${label} soft overlap wing`,[[1.217,0,.176,.115,0],[1.30,0,.191,.127,0],[1.39,0,.219,.139,0]],mat.soft,[side*.16,0,0],side*.93,side*2.20,.004826);
+    for(const y of [1.268,1.351]){
+      fittedShell(groups[2],`Hyperline ${label} side Comfort Strap`,[[y-.012,0,.213,.146,0],[y+.012,0,.216,.148,0]],mat.strap,[side*.16,0,0],side*.74,side*2.42,.001);
+      box(groups[2],`Hyperline ${label} side closure patch`,[side*.166,y,.135],[.053,.025,.0015],mat.pocket,[side*.16,0,0]);
+    }
+    const path=new THREE.CatmullRomCurve3([[side*.135,1.591,.127],[side*.141,1.656,.105],[side*.137,1.674,0],[side*.141,1.656,-.105],[side*.135,1.591,-.127]].map(p=>new THREE.Vector3(...p)));
+    const ribbon=new THREE.Shape();ribbon.moveTo(-.016,-.0005);ribbon.lineTo(.016,-.0005);ribbon.lineTo(.016,.0005);ribbon.lineTo(-.016,.0005);ribbon.closePath();
+    mesh(new THREE.ExtrudeGeometry(ribbon,{steps:64,bevelEnabled:false,extrudePath:path}),mat.strap,groups[2],`Hyperline ${label} shoulder Comfort Strap`,[side*.05,.05,0]);
+    const patch=panel(groups[2],`Hyperline ${label} shoulder closure patch`,[[side*.135-.020,1.646],[side*.135+.020,1.646],[side*.135+.020,1.585],[side*.135-.020,1.585]],.137,.001,mat.pocket,[side*.05,.05,0],.5);
+  }
   const stabOutline=[[-.151,1.241],[-.197,1.42],[-.203,1.566],[-.136,1.642],[-.071,1.611],[.071,1.611],[.136,1.642],[.203,1.566],[.197,1.42],[.151,1.241]];
   panel(groups[3],'Rigid carbon stab front',stabOutline,.158,.004,mat.carbon,[0,0,.40],1.17);
   const stabBack=panel(groups[3],'Rigid carbon stab back',stabOutline,.158,.004,mat.carbon,[0,0,-.40],1.17);stabBack.rotation.y=Math.PI;
@@ -327,6 +374,14 @@ export function buildSuit(materials = {}) {
     }
     const edge=line(groups[6],`Abdominal lame ${i+1} downward overlap`,[[-w+.012,bottom+.01,z-w*w+.007],[0,bottom+.001,z+.009],[w-.012,bottom+.01,z-w*w+.007]],mat.edge,.001);edge.userData.explode.set(0,-i*.012,.72+i*.08);
   }
+  for(const plate of [...groups[6].children].filter(m=>/fitted biceps shell|fitted hamstring shell|outer forearm plate|outer thigh plate|shin plate/.test(m.name))){
+    const g=plate.geometry.clone(),p=g.attributes.position,side=plate.name.startsWith('Left')?-1:1;
+    for(let i=0;i<p.count;i++){
+      if(plate.name.includes('biceps'))p.setX(i,p.getX(i)-side*.0012);
+      else p.setZ(i,p.getZ(i)+(plate.name.includes('hamstring')?.0012:-.0012));
+    }
+    const liner=mesh(g,mat.edge,groups[6],plate.name+' inner polymer substrate',plate.userData.explode.toArray());liner.userData.keepDark=true;
+  }
   for(const m of mannequin.children){
     if(!/head|Crown|ear/.test(m.name))continue;
     const a=new THREE.Matrix4().makeTranslation(0,1.784,0).multiply(new THREE.Matrix4().makeScale(1.13,1.27,1.16)).multiply(new THREE.Matrix4().makeTranslation(0,-1.784,0));
@@ -350,7 +405,8 @@ export function buildSuit(materials = {}) {
     if(layer===0){id='cutlon';label='Cutlon base garment';}
     if(/groin/i.test(n)){id=layer===6?'groin-cup':layer===2?'groin-pouch':'groin-support';label=layer===6?'Removable groin impact cup':layer===2?'Floating cut-resistant groin pouch':'Groin suspension and soft leg loops';}
     if(layer===5&&!id&&!/groin/i.test(n)){id='harness';label='Continuous wraparound harness';}
-    if(layer===1){const zone=/shoulder|elbow|knee|chest|back/.exec(n.toLowerCase())?.[0];id='d3o-'+(side?side+'-':'')+zone;label='D3O '+(side?side+' ':'')+zone+' pad';}
+    if(layer===1){const zone=/shoulder|elbow|knee|chest|back|met/.exec(n.toLowerCase())?.[0];id='d3o-'+(side?side+'-':'')+zone;label='D3O Ghost '+(side?side+' ':'')+(zone==='met'?'met guard':zone+' protector');}
+    if(layer===2&&n.startsWith('Hyperline')){id='hyperline';label='Safe Life Defense Hyper Concealable vest';}
     if(layer===4){const number=n.match(/lame (\d)/)?.[1];id='neck-'+number;label='Concealed neck lame '+number;}
     if(layer===7){const glove=/glove|NETFORCE|knuckle|finger/.test(n);id=side+(glove?'-glove':'-boot');label=side+(glove?' NETFORCE-style glove':' athletic boot');}
     if(!id)id='mesh-'+m.id;
@@ -359,5 +415,6 @@ export function buildSuit(materials = {}) {
     const c=components.get(id);c.meshes.push(m);if(layer===6&&!m.userData.hardware)c.layer=6;
   }
   root.updateMatrixWorld(true);
+  for(const c of components.values()){const bounds=new THREE.Box3();for(const m of c.meshes)bounds.union(new THREE.Box3().setFromObject(m));c.dimensions=bounds.getSize(new THREE.Vector3()).toArray();}
   return {root,groups,parts,components,hardware,hardwareParts,collarKnits,mannequin,materials:mat,abdominal,pads};
 }

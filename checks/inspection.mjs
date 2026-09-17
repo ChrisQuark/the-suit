@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { buildSuit } from '../src/suit.js';
 import { desiredOpacity, applyAssemblyPose, fitComponent, FULL_ORBIT, LAYER_COLORS } from '../src/inspection.js';
 import { PRODUCTS, componentProduct } from '../src/products.js';
+import { GHOST_SPECS, ghostGeometry } from '../src/ghost.js';
 const suit=buildSuit();
 assert.equal(suit.abdominal.length,4);
 const armor=[...suit.components.values()].filter(c=>c.layer===6);
@@ -10,8 +11,22 @@ assert.equal(armor.length,19,'19 independent armor components, including biceps,
 const named=n=>suit.parts.find(m=>m.name===n);
 assert.ok(!suit.parts.some(m=>/waist belt|Right.*stab flank/i.test(m.name)),'Waist belt and right rigid flank are absent');
 assert.ok(named('Left fitted rigid stab flank'));
-assert.equal(suit.pads.length,8);assert.ok(!suit.pads.some(m=>/hip/i.test(m.name)));
-assert.deepEqual([...suit.components.values()].filter(c=>c.layer===1).map(c=>c.id).sort(),['d3o-left-shoulder','d3o-right-shoulder','d3o-left-elbow','d3o-right-elbow','d3o-left-knee','d3o-right-knee','d3o-chest','d3o-back'].sort());
+assert.equal(suit.pads.length,10);assert.ok(!suit.pads.some(m=>/hip/i.test(m.name)));
+assert.deepEqual([...suit.components.values()].filter(c=>c.layer===1).map(c=>c.id).sort(),['d3o-left-shoulder','d3o-right-shoulder','d3o-left-elbow','d3o-right-elbow','d3o-left-knee','d3o-right-knee','d3o-chest','d3o-back','d3o-left-met','d3o-right-met'].sort());
+assert.equal(suit.parts.filter(m=>m.name.endsWith('external Cutlon pocket')).length,10);
+for(const [kind,spec] of Object.entries(GHOST_SPECS)){
+ const flat=ghostGeometry(kind);assert.ok(flat.cellCount>50,'Pads contain many independent raised cells');
+ const shape=flat.lattice.parameters.shapes[0],hole=shape.holes[0].getPoints(6),center=hole.reduce((a,p)=>a.add(p),new THREE.Vector2()).divideScalar(hole.length);
+ const ray=new THREE.Raycaster(new THREE.Vector3(center.x,center.y,.1),new THREE.Vector3(0,0,-1));
+ const lattice=new THREE.Mesh(flat.lattice,new THREE.MeshBasicMaterial()),backing=new THREE.Mesh(flat.backing,new THREE.MeshBasicMaterial());
+ assert.equal(ray.intersectObject(lattice).length,0,'A cell opening is real geometry, not painted on');
+ assert.ok(ray.intersectObject(backing).length,'Fabric backing remains behind the opening');
+ flat.backing.computeBoundingBox();const bounds=flat.backing.boundingBox.getSize(new THREE.Vector3());
+ assert.ok(Math.abs(bounds.x-spec.width)<.004&&Math.abs(bounds.y-spec.height)<.004,'Photo outline preserves catalog size');
+ flat.lattice.computeBoundingBox();assert.ok(Math.abs(flat.lattice.boundingBox.max.z-spec.thickness)<.0001,'Catalog thickness is preserved');
+}
+for(const m of suit.parts.filter(m=>m.userData.isPadPocket))assert.equal(desiredOpacity(m,{selected:1,selectedPart:null,hidden:new Set(),isolate:false,hardware:false,separation:0,peeling:false}),.045,'Pocket fabric fades to reveal a selected insert layer');
+assert.ok(suit.components.get('hyperline').meshes.length>15,'Vest includes separate inserts, carrier, binding and closures');
 for(const separation of [0,.4,1]){
  applyAssemblyPose(suit,separation);
  for(const m of suit.groups[0].children)assert.ok(m.position.equals(m.userData.rest),'Every part of the Cutlon garment stays on the body');
@@ -56,7 +71,7 @@ for(const c of suit.components.values()){
  for(const aspect of [.55,1.7]){
   const camera=new THREE.PerspectiveCamera(32,aspect,.01,40);const fit=fitComponent(c,camera);assert.ok(Number.isFinite(fit.distance)&&fit.distance>fit.radius);assert.ok(fit.center.length()>0,'Frame actual component position, not origin');
  }
- const product=componentProduct(c);assert.ok(product.name&&product.features.length>=3);
+ const product=componentProduct(c);assert.ok(product.name&&product.features.length===3);assert.ok(product.dimensions&&product.contribution);assert.ok(c.dimensions.every(v=>Number.isFinite(v)&&v>0));
 }
 state.selectedPart=null;state.selected=null;assert.ok(suit.parts.every(m=>desiredOpacity(m,state)===1),'Return restores exploded assembly');
 assert.ok(FULL_ORBIT.max<Math.PI/2,'Full model camera cannot pass below the floor');

@@ -38,14 +38,16 @@ function updateUI(){
   $('annotation-text').textContent=state.hardware?'Straps through slots. Sliding rivets. Hook-and-loop sleeves.':'Three rigid lames beneath the knit. Open at the nape.';
 }
 function featureMarkup(product){
- return `<section class="product-features"><h3>${product.name}</h3><ul>${product.features.map(f=>`<li>${f}</li>`).join('')}</ul>${product.sources.length?`<div class="product-sources">${product.sources.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.name} ↗</a>`).join('')}</div>`:''}<p class="detail-note">${product.note}</p></section>`;
+ return `<section class="product-features"><h3>${product.name}</h3><ul>${product.features.slice(0,3).map(f=>`<li>${f}</li>`).join('')}</ul><dl class="compact-specs"><div><dt>Dimensions</dt><dd>${product.dimensions}</dd></div><div><dt>Adds to the suit</dt><dd>${product.contribution}</dd></div></dl>${product.sources.length?`<div class="product-sources">${product.sources.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.name} ↗</a>`).join('')}</div>`:''}</section>`;
 }
 function showDetail(i){
-  document.body.classList.toggle('inspecting',i!==null);$('details').classList.toggle('has-selection',i!==null);$('close-detail').hidden=i===null;$('detail-actions').hidden=i===null;
-  if(i===null){$('detail-index').textContent='SYSTEM / 001';$('detail-title').innerHTML='Built in layers.<br>Free to move.';$('detail-description').textContent='A close study of protection, articulation, and the space between them.';$('detail-extra').innerHTML='<p class="overview-note">Select a layer or a part of the suit to look beneath the surface.</p><div class="overview-stats"><div><strong>08</strong><span>Independent layers</span></div><div><strong>04</strong><span>Sliding abdominal lames</span></div></div>';return;}
-  const l=LAYERS[i];$('detail-index').textContent=`LAYER ${String(i+1).padStart(2,'0')} / ${String(LAYERS.length).padStart(2,'0')}`;$('detail-title').textContent=l.title;$('detail-description').textContent=l.description;
-  $('detail-extra').innerHTML=featureMarkup(PRODUCTS[i])+`<dl class="detail-specs"><div><dt>Material</dt><dd>${l.material}</dd></div><div><dt>Construction</dt><dd>${l.build}</dd></div><div><dt>Attachment</dt><dd>${l.attachment}</dd></div></dl><p class="detail-note">${l.note}</p>`;
+ document.body.classList.toggle('inspecting',i!==null);$('details').classList.toggle('has-selection',i!==null);$('close-detail').hidden=i===null;$('detail-actions').hidden=i===null;
+ $('detail-description').hidden=true;
+ if(i===null){$('detail-index').textContent='SYSTEM / 001';$('detail-title').textContent='Select a component';$('detail-extra').innerHTML='';return;}
+ $('detail-index').textContent=`LAYER ${String(i+1).padStart(2,'0')} / 08`;$('detail-title').textContent=LAYERS[i].name;
+ $('detail-extra').innerHTML=featureMarkup(PRODUCTS[i]);
 }
+
 function selectLayer(i){exitPiece(false);stopPeel();state.selected=i;state.isolate=false;if(i!==null)state.hidden.delete(i);if(focusLayer){focusLayer=false;setCamera('full');}showDetail(i);updateUI();}
 function stopPeel(){state.peeling=false;state.peelStage=8;clearInterval(peelTimer);peelTimer=null;}
 function setSeparation(v){exitPiece(false);stopPeel();state.separation=v;focusLayer=false;setCamera('full');updateUI();}
@@ -81,27 +83,25 @@ $('about-toggle').addEventListener('click',()=>{$('about').showModal();$('about-
 function exitPiece(restore=true){
   if(!state.selectedPart)return;
   state.selectedPart=null;state.isolate=false;focusLayer=false;
-  controls.minDistance=.48;controls.maxDistance=8;controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;
+  if(controls){controls.minDistance=.48;controls.maxDistance=Math.max(8,pieceReturn?pieceReturn.position.distanceTo(pieceReturn.target)*1.4:8);controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;}
   if(restore&&pieceReturn){state.selected=pieceReturn.selected;state.hardware=pieceReturn.hardware;cameraTween={start:performance.now(),from:camera.position.clone(),to:pieceReturn.position,fromTarget:controls.target.clone(),toTarget:pieceReturn.target};}
   else{state.selected=null;setCamera('full');}
   pieceReturn=null;showDetail(state.selected);updateUI();
 }
 function framePiece(view='front'){
-  const c=suit?.components.get(state.selectedPart);if(!c)return;
+  const c=suit?.components.get(state.selectedPart);if(!c||!camera||!controls)return;
   applyAssemblyPose(suit,state.separation);
-  const fit=fitComponent(c,camera),isBack=c.id==='back'||c.id.includes('hamstring')||c.id==='d3o-back';
+  const fit=fitComponent(c,camera),isBack=c.id==='back'||c.id.includes('hamstring')||c.id==='d3o-back'||c.id.includes('elbow');
   const direction=new THREE.Vector3(.25,.14,(view==='back'?-1:1)*(isBack?-1:1)).normalize();
   controls.minDistance=Math.max(.04,fit.radius*1.15+camera.near);controls.maxDistance=Math.max(2,fit.distance*4);controls.minPolarAngle=.01;controls.maxPolarAngle=Math.PI-.01;
   cameraTween={start:performance.now(),from:camera.position.clone(),to:fit.center.clone().addScaledVector(direction,fit.distance),fromTarget:controls.target.clone(),toTarget:fit.center};
 }
 function selectPiece(id){
   const c=suit?.components.get(id);if(!c)return;
-  if(!state.selectedPart)pieceReturn={position:camera.position.clone(),target:controls.target.clone(),selected:state.selected,hardware:state.hardware};
+  if(!state.selectedPart&&camera&&controls)pieceReturn={position:camera.position.clone(),target:controls.target.clone(),selected:state.selected,hardware:state.hardware};
   stopPeel();state.selectedPart=id;state.selected=c.layer;state.hardware=false;state.isolate=false;state.autoRotate=false;currentSeparation=state.separation;
   showDetail(c.layer);$('detail-title').textContent=c.name;$('detail-index').textContent='INDIVIDUAL COMPONENT';$('piece-name').textContent=c.name;
-  $('detail-description').textContent='Drag to rotate. Scroll to zoom. This piece is highlighted for inspection.';
-  const product=componentProduct(c);
-  $('detail-extra').innerHTML=featureMarkup(product)+`<dl class="detail-specs"><div><dt>Attachment</dt><dd>${product.attachment||LAYERS[c.layer].attachment}</dd></div></dl>`;
+  $('detail-extra').innerHTML=featureMarkup(componentProduct(c));
   $('piece-picker').value=id;framePiece();updateUI();
 }
 $('colors').addEventListener('click',()=>{state.colors=!state.colors;updateUI();});
@@ -126,21 +126,21 @@ function environment(){
   studio.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});pmrem.dispose();return result.texture;
 }
 async function init3D(){
+  suit=buildSuit();
+  $('piece-picker').disabled=false;
+  $('piece-picker').innerHTML='<option value="">Inspect a piece…</option>'+[...suit.components.values()].filter(c=>c.meshes.some(m=>!m.userData.hardware)).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   renderer=new THREE.WebGLRenderer({canvas:$('scene'),alpha:true,antialias:true,powerPreference:'high-performance'});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio,1.5));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;renderer.outputColorSpace=THREE.SRGBColorSpace;
   scene=new THREE.Scene();scene.environment=environment();scene.environmentIntensity=1.0;
   const mobile=window.innerWidth<=760;
   camera=new THREE.PerspectiveCamera(32,1,.01,40);camera.position.set(.90,1.12,4.05);
-  controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.0,0);controls.enableDamping=true;controls.dampingFactor=.07;controls.enablePan=false;controls.minDistance=.48;controls.maxDistance=8;controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;controls.autoRotateSpeed=.65;
+  controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.0,0);controls.enableDamping=true;controls.dampingFactor=.07;controls.enablePan=false;controls.minDistance=.48;controls.maxDistance=Math.max(8,pieceReturn?pieceReturn.position.distanceTo(pieceReturn.target)*1.4:8);controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;controls.autoRotateSpeed=.65;
   controls.addEventListener('start',()=>{cameraTween=null;});
   scene.add(new THREE.HemisphereLight(0xd5dbe5,0x151619,.7));
   const key=new THREE.DirectionalLight(0xf0ece5,2.8);key.position.set(-2.2,3.4,3.5);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-1.7;key.shadow.camera.right=1.7;key.shadow.camera.top=2.4;key.shadow.camera.bottom=-1.4;key.shadow.normalBias=.0015;key.shadow.bias=-.00015;scene.add(key);
   const rim=new THREE.DirectionalLight(0xc4d2e6,2.4);rim.position.set(2.2,2.3,-1.7);scene.add(rim);
   const front=new THREE.DirectionalLight(0xc3ccdc,.4);front.position.set(1.3,.6,3);scene.add(front);
-  suit=buildSuit();
   suit.root.traverse(m=>{if(!m.isMesh)return;m.material=m.material.clone();m.userData.baseColor=m.material.color.clone();m.userData.baseMetalness=m.material.metalness;m.userData.baseRoughness=m.material.roughness;m.userData.baseMap=m.material.map;m.userData.colorMode=false;m.material.envMapIntensity=m.userData.layer===6?1.15:.48;m.userData.opacity=1;});
-  $('piece-picker').disabled=false;
-  $('piece-picker').innerHTML='<option value="">Inspect a piece…</option>'+[...suit.components.values()].filter(c=>c.meshes.some(m=>!m.userData.hardware)).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   suit.collarKnits.forEach(p=>p.userData.isCollar=true);scene.add(suit.root);
   const floor=new THREE.Mesh(new THREE.CircleGeometry(3,96),new THREE.MeshStandardMaterial({color:0x07080a,roughness:.72,metalness:.12,transparent:true,opacity:.92,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.008;floor.receiveShadow=true;scene.add(floor);
 
@@ -173,11 +173,11 @@ async function init3D(){
     for(const m of [...suit.parts,...suit.hardwareParts]){
       const target=desiredOpacity(m,state);if(state.selectedPart)m.userData.opacity=target;else m.userData.opacity+=(target-m.userData.opacity)*ease;m.visible=m.userData.opacity>.012;
       m.material.opacity=m.userData.opacity;m.material.transparent=m.userData.opacity<.995;m.material.depthWrite=m.userData.opacity>.75;
-      if(m.userData.colorMode!==state.colors){m.userData.colorMode=state.colors;m.material.map=state.colors?null:m.userData.baseMap;m.material.metalness=state.colors?.05:m.userData.baseMetalness;m.material.roughness=state.colors?.67:m.userData.baseRoughness;m.material.needsUpdate=true;}
+      if(m.userData.colorMode!==state.colors){m.userData.colorMode=state.colors;m.material.map=state.colors&&!m.userData.keepDark?null:m.userData.baseMap;m.material.metalness=state.colors?.05:m.userData.baseMetalness;m.material.roughness=state.colors?.67:m.userData.baseRoughness;m.material.needsUpdate=true;}
       const ex=m.userData.explode;m.position.copy(m.userData.rest).addScaledVector(ex,m.userData.layer===0?0:currentSeparation);
       if(state.peeling&&m.userData.layer>state.peelStage)m.position.addScaledVector(ex,.4);
       if(state.hardware&&m.userData.hardware&&!state.colors){m.material.color.lerp(new THREE.Color(0xb8cdaa),ease);if(m.material.emissive){m.material.emissive.setHex(0x597747);m.material.emissiveIntensity=.25;}}
-      else{m.material.color.lerp(state.colors?new THREE.Color(LAYER_COLORS[m.userData.layer]):m.userData.baseColor,ease);if(m.material.emissive){const selected=state.selectedPart===m.userData.component;m.material.emissive.setHex(selected?0xb0bd98:0x000000);m.material.emissiveIntensity=selected?.28:0;}}
+      else{m.material.color.lerp(state.colors&&!m.userData.keepDark?new THREE.Color(LAYER_COLORS[m.userData.layer]):m.userData.baseColor,ease);if(m.material.emissive){const selected=state.selectedPart===m.userData.component;m.material.emissive.setHex(selected?0xb0bd98:0x000000);m.material.emissiveIntensity=selected?.28:0;}}
     }
     suit.mannequin.visible=!state.selectedPart;
     floor.visible=contact.visible=!state.selectedPart&&currentSeparation<.01;

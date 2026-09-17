@@ -10,6 +10,7 @@ export function desiredOpacity(part,state){
   if(part.userData.hardware)return state.hardware?1:state.isolate?0:state.hidden.has(5)?0:state.selected!==null&&state.selected<5?.035:1;
   if(state.hidden.has(layer))return 0;
   if(state.isolate)return state.selected===layer?1:0;
+  if(part.userData.isPadPocket&&state.selected===1)return .045;
   if(layer===1&&state.selected!==1&&state.separation<.04&&!state.peeling)return 0;
   if(state.peeling&&layer>state.peelStage)return 0;
   if(state.hardware){if(layer===6)return .13;if(layer===5)return 1;if(layer===4)return .4;if(layer===0)return .35;return .08;}
