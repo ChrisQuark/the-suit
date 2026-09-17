@@ -3,14 +3,18 @@ import * as THREE from 'three';
 import { buildSuit } from '../src/suit.js';
 import { desiredOpacity, applyAssemblyPose, fitComponent, FULL_ORBIT, LAYER_COLORS } from '../src/inspection.js';
 import { PRODUCTS, componentProduct } from '../src/products.js';
+import { LAYERS } from '../src/layers.js';
+import { LIMB_FITS, limbSection } from '../src/armor.js';
 import { GHOST_SPECS, ghostGeometry } from '../src/ghost.js';
 const suit=buildSuit();
-assert.equal(suit.abdominal.length,4);
+assert.equal(suit.abdominal.length,0);
+assert.equal(suit.groups.length,LAYERS.length);
+assert.equal(LAYERS.length,10);
 const armor=[...suit.components.values()].filter(c=>c.layer===6);
-assert.equal(armor.length,19,'19 independent armor components, including biceps, hamstrings and the separate cup');
+assert.equal(armor.length,11,'Ten fitted limb shells and a separate groin insert');
 const named=n=>suit.parts.find(m=>m.name===n);
 assert.ok(!suit.parts.some(m=>/waist belt|Right.*stab flank/i.test(m.name)),'Waist belt and right rigid flank are absent');
-assert.ok(named('Left fitted rigid stab flank'));
+assert.ok(!suit.parts.some(m=>/Hyperline|Rigid carbon stab|stab flank|Abdominal lame|Independent chest plate|Independent upper back plate|vertical abdominal elastic|slotted rivet/i.test(m.name)),'All retired torso armor and abdominal hardware are removed');
 assert.equal(suit.pads.length,10);assert.ok(!suit.pads.some(m=>/hip/i.test(m.name)));
 assert.deepEqual([...suit.components.values()].filter(c=>c.layer===1).map(c=>c.id).sort(),['d3o-left-shoulder','d3o-right-shoulder','d3o-left-elbow','d3o-right-elbow','d3o-left-knee','d3o-right-knee','d3o-chest','d3o-back','d3o-left-met','d3o-right-met'].sort());
 assert.equal(suit.parts.filter(m=>m.name.endsWith('external Cutlon pocket')).length,10);
@@ -26,7 +30,7 @@ for(const [kind,spec] of Object.entries(GHOST_SPECS)){
  flat.lattice.computeBoundingBox();assert.ok(Math.abs(flat.lattice.boundingBox.max.z-spec.thickness)<.0001,'Catalog thickness is preserved');
 }
 for(const m of suit.parts.filter(m=>m.userData.isPadPocket))assert.equal(desiredOpacity(m,{selected:1,selectedPart:null,hidden:new Set(),isolate:false,hardware:false,separation:0,peeling:false}),.045,'Pocket fabric fades to reveal a selected insert layer');
-assert.ok(suit.components.get('hyperline').meshes.length>15,'Vest includes separate inserts, carrier, binding and closures');
+for(const id of ['novasteel-front','novasteel-back','novasteel-left-shoulder','novasteel-right-shoulder','novasteel-helmet','novasteel-mandible','novasteel-circlet','novasteel-buckler'])assert.ok(suit.components.get(id),'New independent component: '+id);
 for(const separation of [0,.4,1]){
  applyAssemblyPose(suit,separation);
  for(const m of suit.groups[0].children)assert.ok(m.position.equals(m.userData.rest),'Every part of the Cutlon garment stays on the body');
@@ -75,7 +79,7 @@ for(const [name,material] of Object.entries(suit.materials)){
  assert.equal(material.map.colorSpace,THREE.SRGBColorSpace);
  assert.ok(material.map.repeat.x>20&&material.map.repeat.x<70,'Surface scale is calibrated per metre');
 }
-assert.equal(surfaceKinds.size,11,'Eleven distinct material constructions');
+assert.equal(surfaceKinds.size,12,'Twelve material constructions, including coated NovaSteel');
 assert.equal(named('Left glove palm').material.userData.surfaceKind,'leather');
 assert.equal(named('Left NETFORCE mesh knuckle oval').material.userData.surfaceKind,'jersey');
 assert.equal(named('Left rounded athletic sole').material.userData.surfaceKind,'rubber');
@@ -94,7 +98,7 @@ for(const side of ['left','right'])for(const area of ['biceps','hamstring']){
  assert.ok(c.meshes.some(m=>/loop on plate back/.test(m.name)),'New limb shell has an independent attachment patch');
  const m=c.meshes[0],positions=m.geometry.attributes.position,normals=m.geometry.attributes.normal;
  // Mid-row exterior normal must point away from the limb centre, on both mirrored shells.
- const vertex=49+24;const normal=new THREE.Vector3().fromBufferAttribute(normals,vertex);
+ const vertex=24*41+20;const normal=new THREE.Vector3().fromBufferAttribute(normals,vertex);
  assert.ok(area==='hamstring'?normal.z<-.5:Math.sign(normal.x)===(side==='left'?-1:1),`${c.name}: correct exterior normal`);
  assert.ok(positions.count>200);
 }
@@ -123,14 +127,54 @@ for(const c of suit.components.values()){
 }
 state.selectedPart=null;state.selected=null;assert.ok(suit.parts.every(m=>desiredOpacity(m,state)===1),'Return restores exploded assembly');
 assert.ok(FULL_ORBIT.max<Math.PI/2,'Full model camera cannot pass below the floor');
-assert.equal(new Set(LAYER_COLORS).size,8);
+assert.equal(new Set(LAYER_COLORS).size,LAYERS.length);
 for(const hex of LAYER_COLORS){const color=new THREE.Color(hex);const hsl=color.getHSL({},THREE.SRGBColorSpace);assert.ok(hsl.s<.55,'Muted military color palette');}
-assert.equal(PRODUCTS.length,8);
+assert.equal(PRODUCTS.length,LAYERS.length);
 assert.ok(suit.parts.some(m=>m.name.includes('NETFORCE extended glove cuff')));
 applyAssemblyPose(suit,0);
-const lameBounds=suit.abdominal.map(m=>new THREE.Box3().setFromObject(m));
-for(let i=1;i<4;i++)assert.ok(Math.abs(lameBounds[i].max.y-lameBounds[i-1].min.y-.015)<.001);
 const cup=new THREE.Box3().setFromObject(named('Removable groin impact cup'));
-assert.ok(lameBounds[3].min.y-cup.max.y>.09,'Groin insert remains independent with a flexible waist gap');
+for(const torso of suit.adept.torso){
+ const bounds=new THREE.Box3().setFromObject(torso);assert.ok(bounds.min.y-cup.max.y>.15,'Torso does not bridge the waist or groin');
+ const d=torso.name.includes('front')?1:-1;
+ for(const x of [-.1,0,.1])for(const y of [1.29,1.44,1.57]){
+  const ray=new THREE.Raycaster(new THREE.Vector3(x,y,d*.5),new THREE.Vector3(0,0,-d));
+  assert.ok(ray.intersectObject(torso).length,'Both torso shells expose the correct strike face');
+ }
+}
+for(const side of [-1,1])for(const [area,fit] of Object.entries(LIMB_FITS)){
+ const c=suit.components.get((side<0?'left':'right')+'-'+area),shell=c.meshes.find(m=>m.userData.limbArea===area),p=shell.geometry.attributes.position;
+ for(let i=0;i<p.count;i+=17){
+  const y=p.getY(i),{c,r}=limbSection(side,fit.area,y);
+  const ellipse=((p.getX(i)-c.x)/(r.x+.003))**2+((p.getZ(i)-c.z)/(r.y+.003))**2;
+  assert.ok(ellipse>1,area+': shell and inner face clear the garment');
+  assert.ok(y>=fit.low-.00001&&y<=fit.high+.00001,area+': edges stay within joint-free span');
+ }
+ const box=new THREE.Box3().setFromObject(shell);
+ if(area==='forearm')assert.ok(box.max.y<1.32&&box.min.y>1.16,'Elbow and wrist flexion spaces remain open');
+ if(area==='biceps')assert.ok(box.min.y>1.41&&box.max.y<1.50,'Biceps shell does not join the shoulder or elbow');
+ if(area==='thigh'||area==='hamstring')assert.ok(box.min.y>.72&&box.max.y<.98,'Knee and hip creases are free of rigid limb armor');
+ if(area==='shin')assert.ok(box.min.y>.22&&box.max.y<.53,'Shin shell ends before ankle and knee');
+}
+for(const side of [-1,1]){
+ const label=side<0?'Left':'Right',shell=named(label+' NovaSteel formed shoulder shell'),pocket=named(label+' Ghost shoulder external Cutlon pocket');
+ // Surface probes in the deltoid and upper arm must encounter metal before fabric.
+ for(const y of [1.55,1.58,1.62])for(const z of [-.03,0,.03]){
+  const ray=new THREE.Raycaster(new THREE.Vector3(side*.60,y,z),new THREE.Vector3(-side,0,0));
+  const armorHit=ray.intersectObject(shell)[0],pocketHit=ray.intersectObject(pocket)[0];
+  assert.ok(armorHit&&pocketHit,'Shoulder and underlying D3O pocket cover the sample');
+  assert.ok(pocketHit.distance-armorHit.distance>.002,'NovaSteel shoulder clears the outer D3O pocket');
+ }
+ const shoulderBox=new THREE.Box3().setFromObject(shell),bicepsBox=new THREE.Box3().setFromObject(suit.components.get((side<0?'left':'right')+'-biceps').meshes[0]);
+ assert.ok(shoulderBox.min.y-bicepsBox.max.y>.008,'Flexible gap separates shoulder and biceps shells');
+}
+for(const direction of [new THREE.Vector3(0,1,0),new THREE.Vector3(.7,.7,0),new THREE.Vector3(-.7,.7,0),new THREE.Vector3(0,.7,.7),new THREE.Vector3(0,.7,-.7)]){
+ direction.normalize();const center=new THREE.Vector3(0,1.935,-.003),ray=new THREE.Raycaster(center.clone().addScaledVector(direction,.4),direction.clone().negate());
+ assert.ok(ray.intersectObjects(suit.components.get('novasteel-helmet').meshes).length,'Helmet shell and crown closure are visible from above and all sides');
+}
+const faceRay=new THREE.Raycaster(new THREE.Vector3(.012,1.87,.5),new THREE.Vector3(0,0,-1));assert.ok(faceRay.intersectObject(suit.adept.mandible).length,'Mandible face has correct winding');
+const eyeRay=new THREE.Raycaster(new THREE.Vector3(.012,1.929,.5),new THREE.Vector3(0,0,-1));assert.equal(eyeRay.intersectObject(suit.adept.mandible).length,0,'The eye opening remains physically open');
+for(const d of [-1,1]){const ray=new THREE.Raycaster(new THREE.Vector3(-.434,1.057,.152+d*.5),new THREE.Vector3(0,0,-d));assert.ok(ray.intersectObject(suit.adept.buckler).length,'Buckler is solid and visible from front and rear');}
+const bucklerBounds=new THREE.Box3().setFromObject(suit.adept.buckler).getSize(new THREE.Vector3());assert.ok(Math.abs(bucklerBounds.x-.310)<.006,'Nominal 310 mm buckler span');
+for(const side of ['left','right']){const glove=componentProduct(suit.components.get(side+'-glove'));assert.ok(glove.features.some(f=>/electroshock/.test(f)));assert.ok(glove.features.some(f=>/battery.*1,800 mAh.*USB-C/.test(f)));}
 suit.root.traverse(m=>{if(m.isMesh){assert.ok([...m.geometry.attributes.position.array].every(Number.isFinite));assert.ok([...m.geometry.attributes.normal.array].every(Number.isFinite));}});
-console.log('PASS: independent orange pads, 588 mannequin-clearance rays, eleven textured materials, metric UVs, fixed Cutlon, full straps, component isolation, boot rays, camera fit, muted colors, product cards and waist clearance.');
+console.log('PASS: independent orange pads, 588 mannequin-clearance rays, twelve textured materials, metric UVs, fixed Cutlon, full straps, component isolation, boot rays, camera fit, muted colors, product cards, replacement armor, shoulder layering, limb fit, helmet faces and buckler.');

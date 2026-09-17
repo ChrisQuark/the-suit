@@ -1,11 +1,11 @@
 {
   "name": "the-suit",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node --check src/app.js && node --check src/suit.js && node --check src/inspection.js && node --check src/layers.js && node --check src/products.js && node --check src/ghost.js && node --check src/materials.js && node checks/inspection.mjs"
+    "check": "node --check src/app.js && node --check src/suit.js && node --check src/inspection.js && node --check src/layers.js && node --check src/products.js && node --check src/ghost.js && node --check src/materials.js && node --check src/armor.js && node checks/inspection.mjs"
   },
   "dependencies": {
     "three": "0.170.0"

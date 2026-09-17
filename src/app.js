@@ -12,7 +12,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const $=id=>document.getElementById(id);
 const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const state={selected:null,selectedPart:null,colors:false,hidden:new Set(),isolate:false,hardware:false,separation:0,peeling:false,peelStage:8,autoRotate:false};
+const state={selected:null,selectedPart:null,colors:false,hidden:new Set(),isolate:false,hardware:false,separation:0,peeling:false,peelStage:LAYERS.length,autoRotate:false};
 const eye='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.4"/></svg>';
 let suit,controls,camera,renderer,scene,cameraTween=null,peelTimer=null,modelReady=false,focusLayer=false;
 let currentSeparation=0,frameHandle=0,previous=0;
@@ -33,9 +33,9 @@ function updateUI(){
   $('hardware').setAttribute('aria-pressed',String(state.hardware));$('rotate').setAttribute('aria-pressed',String(state.autoRotate));$('peel').setAttribute('aria-pressed',String(state.peeling));$('peel').querySelector('span').textContent=state.peeling?'Stop peel':'Peel layers';
   $('isolate').classList.toggle('active',state.isolate);$('isolate').innerHTML=state.isolate?'Exit isolation <span>↙</span>':'Isolate layer <span>↗</span>';
   $('focus').innerHTML=focusLayer?'Full view <span>−</span>':'Inspect close-up <span>+</span>';
-  $('status').textContent=state.selectedPart?'PIECE ISOLATED · DRAG TO ROTATE':state.peeling?`PEELING / ${Math.max(1,state.peelStage+1)} OF 8`:state.hardware?'HARDWARE REVEALED':state.isolate&&state.selected!==null?`LAYER ${String(state.selected+1).padStart(2,'0')} ISOLATED`:state.selected!==null?`INSPECTING LAYER ${String(state.selected+1).padStart(2,'0')}`:state.hidden.size?`${8-state.hidden.size} LAYERS VISIBLE`:'ALL LAYERS VISIBLE';
+  $('status').textContent=state.selectedPart?'PIECE ISOLATED · DRAG TO ROTATE':state.peeling?`PEELING / ${Math.max(1,state.peelStage+1)} OF ${LAYERS.length}`:state.hardware?'HARDWARE REVEALED':state.isolate&&state.selected!==null?`LAYER ${String(state.selected+1).padStart(2,'0')} ISOLATED`:state.selected!==null?`INSPECTING LAYER ${String(state.selected+1).padStart(2,'0')}`:state.hidden.size?`${LAYERS.length-state.hidden.size} LAYERS VISIBLE`:'ALL LAYERS VISIBLE';
   $('annotation').hidden=!state.hardware&&state.selected!==4;
-  $('annotation-text').textContent=state.hardware?'Straps through slots. Sliding rivets. Hook-and-loop sleeves.':'Three rigid lames beneath the knit. Open at the nape.';
+  $('annotation-text').textContent=state.hardware?'Integral torso straps. Floating shoulders. Separate sleeve mounts.':'Three rigid lames beneath the knit. Open at the nape.';
 }
 function featureMarkup(product){
  return `<section class="product-features"><h3>${product.name}</h3><ul>${product.features.slice(0,3).map(f=>`<li>${f}</li>`).join('')}</ul><dl class="compact-specs"><div><dt>Dimensions</dt><dd>${product.dimensions}</dd></div><div><dt>Adds to the suit</dt><dd>${product.contribution}</dd></div></dl>${product.sources.length?`<div class="product-sources">${product.sources.map(s=>`<a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.name} ↗</a>`).join('')}</div>`:''}</section>`;
@@ -44,19 +44,19 @@ function showDetail(i){
  document.body.classList.toggle('inspecting',i!==null);$('details').classList.toggle('has-selection',i!==null);$('close-detail').hidden=i===null;$('detail-actions').hidden=i===null;
  $('detail-description').hidden=true;
  if(i===null){$('detail-index').textContent='SYSTEM / 001';$('detail-title').textContent='Select a component';$('detail-extra').innerHTML='';return;}
- $('detail-index').textContent=`LAYER ${String(i+1).padStart(2,'0')} / 08`;$('detail-title').textContent=LAYERS[i].name;
+ $('detail-index').textContent=`LAYER ${String(i+1).padStart(2,'0')} / ${String(LAYERS.length).padStart(2,'0')}`;$('detail-title').textContent=LAYERS[i].name;
  $('detail-extra').innerHTML=featureMarkup(PRODUCTS[i]);
 }
 
 function selectLayer(i){exitPiece(false);stopPeel();state.selected=i;state.isolate=false;if(i!==null)state.hidden.delete(i);if(focusLayer){focusLayer=false;setCamera('full');}showDetail(i);updateUI();}
-function stopPeel(){state.peeling=false;state.peelStage=8;clearInterval(peelTimer);peelTimer=null;}
+function stopPeel(){state.peeling=false;state.peelStage=LAYERS.length;clearInterval(peelTimer);peelTimer=null;}
 function setSeparation(v){exitPiece(false);stopPeel();state.separation=v;focusLayer=false;setCamera('full');updateUI();}
 function setCamera(mode='full'){
   if(!camera||!controls)return;
   const mobile=window.innerWidth<=760;
-  let target=new THREE.Vector3(0,1.0,0),p;
+  let target=new THREE.Vector3(-.02,1.04,0),p;
   if(mode==='focus'&&state.selected!==null){const l=LAYERS[state.selected];target.set(...l.focus);target.z+=state.separation*.35;p=target.clone().add(new THREE.Vector3(l.distance*.23,l.distance*.08,l.distance));}
-  else{const dist=Math.max(state.separation>0?(mobile?4.8:4.65):4.05,(state.separation>0?1.85:1.05)/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2)*Math.max(.25,camera.aspect))*1.12);controls.maxDistance=Math.max(8,dist*1.4);const exploded=state.separation>0&&mode==='full';p=new THREE.Vector3(mode==='front'?0:mode==='back'?0:dist*(exploded?.78:.26),1.12,mode==='back'?-dist:dist*(exploded?.78:1));}
+  else{const dist=Math.max(state.separation>0?(mobile?5.0:4.85):4.22,(state.separation>0?2.10:1.28)/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2)*Math.max(.25,camera.aspect))*1.12);controls.maxDistance=Math.max(8,dist*1.4);const exploded=state.separation>0&&mode==='full';p=new THREE.Vector3(mode==='front'?0:mode==='back'?0:dist*(exploded?.78:.26),1.12,mode==='back'?-dist:dist*(exploded?.78:1));}
   cameraTween={start:performance.now(),from:camera.position.clone(),to:p,fromTarget:controls.target.clone(),toTarget:target};
   if(reduced){camera.position.copy(p);controls.target.copy(target);cameraTween=null;}
   $('view-label').textContent=mode==='back'?'BACK VIEW':mode==='front'?'FRONT VIEW':mode==='focus'?'DETAIL / INSPECTION':'FRONT / THREE-QUARTER';
@@ -74,7 +74,7 @@ $('front').addEventListener('click',()=>{state.autoRotate=false;state.selectedPa
 document.querySelector('.wordmark').addEventListener('click',e=>{e.preventDefault();reset();});
 $('peel').addEventListener('click',()=>{
   if(state.peeling){stopPeel();state.selected=null;showDetail(null);updateUI();return;}
-  reset();state.peeling=true;state.peelStage=7;state.selected=7;showDetail(7);updateUI();
+  reset();state.peeling=true;state.peelStage=LAYERS.length-1;state.selected=state.peelStage;showDetail(state.selected);updateUI();
   // Deliberately read as an assembly study: outside to skin, one layer at a time.
   peelTimer=setInterval(()=>{if(document.hidden)return;state.peelStage--;if(state.peelStage<0){stopPeel();state.selected=0;showDetail(0);}else{state.selected=state.peelStage;showDetail(state.selected);}updateUI();},reduced?3300:2400);
 });
@@ -91,7 +91,7 @@ function exitPiece(restore=true){
 function framePiece(view='front'){
   const c=suit?.components.get(state.selectedPart);if(!c||!camera||!controls)return;
   applyAssemblyPose(suit,state.separation);
-  const fit=fitComponent(c,camera),isBack=c.id==='back'||c.id.includes('hamstring')||c.id==='d3o-back'||c.id.includes('elbow');
+  const fit=fitComponent(c,camera),isBack=c.id==='novasteel-back'||c.id==='back'||c.id.includes('hamstring')||c.id==='d3o-back'||c.id.includes('elbow');
   const direction=new THREE.Vector3(.25,.14,(view==='back'?-1:1)*(isBack?-1:1)).normalize();
   controls.minDistance=Math.max(.04,fit.radius*1.15+camera.near);controls.maxDistance=Math.max(2,fit.distance*4);controls.minPolarAngle=.01;controls.maxPolarAngle=Math.PI-.01;
   cameraTween={start:performance.now(),from:camera.position.clone(),to:fit.center.clone().addScaledVector(direction,fit.distance),fromTarget:controls.target.clone(),toTarget:fit.center};
@@ -134,7 +134,7 @@ async function init3D(){
   scene=new THREE.Scene();scene.environment=environment();scene.environmentIntensity=1.0;
   const mobile=window.innerWidth<=760;
   camera=new THREE.PerspectiveCamera(32,1,.01,40);camera.position.set(.90,1.12,4.05);
-  controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.0,0);controls.enableDamping=true;controls.dampingFactor=.07;controls.enablePan=false;controls.minDistance=.48;controls.maxDistance=Math.max(8,pieceReturn?pieceReturn.position.distanceTo(pieceReturn.target)*1.4:8);controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;controls.autoRotateSpeed=.65;
+  controls=new OrbitControls(camera,renderer.domElement);controls.target.set(-.02,1.04,0);controls.enableDamping=true;controls.dampingFactor=.07;controls.enablePan=false;controls.minDistance=.48;controls.maxDistance=Math.max(8,pieceReturn?pieceReturn.position.distanceTo(pieceReturn.target)*1.4:8);controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;controls.autoRotateSpeed=.65;
   controls.addEventListener('start',()=>{cameraTween=null;});
   scene.add(new THREE.HemisphereLight(0xd5dbe5,0x151619,.85));
   const key=new THREE.DirectionalLight(0xf0ece5,2.8);key.position.set(-2.2,3.4,3.5);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-1.7;key.shadow.camera.right=1.7;key.shadow.camera.top=2.4;key.shadow.camera.bottom=-1.4;key.shadow.normalBias=.0015;key.shadow.bias=-.00015;scene.add(key);

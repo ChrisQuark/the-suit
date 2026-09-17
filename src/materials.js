@@ -13,6 +13,7 @@ export const SURFACE_RECIPES={
  rubber:{tile:.027,relief:.00009,roughness:.87},
  elastomer:{tile:.019,relief:.000018,roughness:.58},
  chrome:{tile:.036,relief:.000003,roughness:.19},
+ coated:{tile:.022,relief:.000025,roughness:.64},
  polymer:{tile:.024,relief:.00003,roughness:.78},
  hook:{tile:.015,relief:.00018,roughness:.98}
 };
@@ -35,6 +36,7 @@ function field(kind,u,v){
  if(kind==='polyester')return clamp(.48+.11*Math.sin(TAU*u*96)+.065*Math.cos(TAU*v*96)+noise*.055);
  if(kind==='leather')return clamp(.48+.19*Math.sin(TAU*u*22+.8*Math.sin(TAU*v*8))*Math.sin(TAU*v*26+.6*Math.cos(TAU*u*6))+noise*.04);
  if(kind==='rubber')return clamp(.48+.075*Math.sin(TAU*u*18)*Math.cos(TAU*v*22)+noise*.065);
+ if(kind==='coated')return clamp(.5+noise*.08+.03*Math.cos(TAU*u*44)*Math.sin(TAU*v*52));
  if(kind==='elastomer')return clamp(.5+noise*.04+.025*Math.cos(TAU*(u*48+v*40)));
  if(kind==='chrome')return clamp(.5+.07*Math.sin(TAU*v*192+.2*Math.sin(TAU*u*4))+.035*Math.cos(TAU*v*88)+noise*.012);
  if(kind==='hook')return clamp(.3+.36*yarn(u+.02*Math.sin(TAU*v*12),24)*yarn(v,24)+noise*.09);
@@ -74,6 +76,7 @@ export function makeMaterials(overrides={}){
   soft:physical('polyester',{color:0x343a3d,metalness:0,sheen:.30,sheenRoughness:.9}),
   carbon:physical('carbon',{color:0x44494c,metalness:.10,clearcoat:.38,clearcoatRoughness:.36}),
   strap:physical('webbing',{color:0x252b29,metalness:0,sheen:.18}),
+  coated:physical('coated',{color:0x3c4246,metalness:.25,clearcoat:.12,clearcoatRoughness:.55}),
   metal:physical('chrome',{color:0xc8cdd2,metalness:1,clearcoat:.20,clearcoatRoughness:.28,iridescence:.018}),
   edge:physical('polymer',{color:0x20262a,metalness:.08}),
   rubber:physical('rubber',{color:0x232827,metalness:0}),

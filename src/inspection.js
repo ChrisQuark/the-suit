@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-export const LAYER_COLORS=[0x686b59,0xb98241,0x7f7866,0x59695d,0x786d67,0x938261,0x4c6571,0x555e45];
-export const LAYER_COLOR_NAMES=['Olive-gray knit','Burnt-ochre impact pads','Taupe soft vest','Field-green stab panels','Earth-tone neck lames','Khaki webbing','Slate-blue outer plates','Ranger-green gloves & boots'];
+export const LAYER_COLORS=[0x686b59,0xb98241,0x7f7866,0x59695d,0x786d67,0x938261,0x4c6571,0x555e45,0x737d7f,0x7d765c];
+export const LAYER_COLOR_NAMES=['Olive-gray knit','Burnt-ochre impact pads','Stone-gray NovaSteel torso','Field-green NovaSteel shoulders','Earth-tone neck lames','Khaki webbing','Slate-blue outer plates','Ranger-green gloves & boots','Steel-gray helmet','Earth-tone buckler'];
 export const FULL_ORBIT={min:.20,max:Math.PI*.485};
 
 export function desiredOpacity(part,state){
@@ -14,7 +14,7 @@ export function desiredOpacity(part,state){
   // Inserts are independent parts. The garment/pockets hide them physically;
   // turning off Cutlon must never turn off the impact-pad layer.
   if(state.peeling&&layer>state.peelStage)return 0;
-  if(state.hardware){if(layer===6)return .13;if(layer===5)return 1;if(layer===4)return .4;if(layer===0)return .35;return .08;}
+  if(state.hardware){if([2,3,6,8,9].includes(layer))return .13;if(layer===5)return 1;if(layer===4)return .4;if(layer===0)return .35;return .08;}
   if(state.selected===4&&part.userData.isCollar)return .035;
   if(state.selected!==null&&layer>state.selected)return .045;
   return 1;
