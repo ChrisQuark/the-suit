@@ -25,10 +25,10 @@ function dense(g){
 }
 export function deformGeometry(original,map){
  const g=original.clone(),p=g.attributes.position,uv=[];
- for(let i=0;i<p.count;i++){const u=p.getX(i),v=p.getY(i),w=p.getZ(i);const q=map(u,v,w);p.setXYZ(i,...q);uv.push(u*8,v*8);}
+ for(let i=0;i<p.count;i++){const u=p.getX(i),v=p.getY(i),w=p.getZ(i);const q=map(u,v,w);p.setXYZ(i,...q);uv.push(u,v);}
  const zero=new THREE.Vector3(...map(0,0,0));const d=[0,1,2].map(i=>{const a=[0,0,0];a[i]=.0001;return new THREE.Vector3(...map(...a)).sub(zero);});
  if(d[0].clone().cross(d[1]).dot(d[2])<0){const indices=[];for(let i=0;i<p.count;i+=3)indices.push(i,i+2,i+1);g.setIndex(indices);}
- g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.computeVertexNormals();return g;
+ g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.userData.metricUV=true;g.boundingBox=null;g.boundingSphere=null;g.computeVertexNormals();return g;
 }
 const cache=new Map();
 export function ghostGeometry(kind){

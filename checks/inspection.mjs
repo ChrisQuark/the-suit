@@ -32,6 +32,54 @@ for(const separation of [0,.4,1]){
  for(const m of suit.groups[0].children)assert.ok(m.position.equals(m.userData.rest),'Every part of the Cutlon garment stays on the body');
 }
 applyAssemblyPose(suit,0);
+// Hiding the garment must reveal independently controlled orange inserts.
+const padState={selected:null,selectedPart:null,hidden:new Set(),isolate:false,hardware:false,separation:0,peeling:false};
+for(const separation of [0,.4,1])for(const hideGarment of [false,true]){
+ padState.separation=separation;padState.hidden=new Set(hideGarment?[0]:[]);
+ for(const m of suit.groups[1].children)assert.equal(desiredOpacity(m,padState),1,'Every pad surface survives the Cutlon visibility toggle');
+ padState.hidden.add(1);
+ for(const m of suit.groups[1].children)assert.equal(desiredOpacity(m,padState),0,'Impact visibility is controlled by its own layer');
+}
+for(const side of ['Left','Right']){
+ for(const area of ['leg','sleeve']){
+  const garment=named(`${side} continuous tailored ${area}`),body=suit.mannequin.getObjectByName(garment.name+' mannequin'),p=garment.geometry.attributes.position;
+  for(const row of [4,12,20,28,36,44,52,60,68,76,84,92]){
+   const center=new THREE.Vector3();for(let j=0;j<48;j++)center.add(new THREE.Vector3().fromBufferAttribute(p,row*49+j));center.divideScalar(48);
+   for(let j=0;j<12;j++){
+    const direction=new THREE.Vector3(Math.sin(j*Math.PI/6),0,Math.cos(j*Math.PI/6));
+    const ray=new THREE.Raycaster(center.clone().addScaledVector(direction,.3),direction.clone().negate());
+    const clothHit=ray.intersectObject(garment)[0],bodyHit=ray.intersectObject(body)[0];
+    assert.ok(clothHit&&bodyHit,`${side} ${area} has outward surfaces at ring ${row}, angle ${j}`);
+    assert.ok(bodyHit.distance-clothHit.distance>.003,`${side} ${area}: mannequin stays inside the knit from every tested angle`);
+   }
+  }
+ }
+ const garment=named(`${side} shoulder knit`),body=suit.mannequin.getObjectByName(`${side} shoulder`);
+ // Offset the lower ray slightly from the sphere's degenerate pole vertex.
+ for(const axis of [new THREE.Vector3(1,0,0),new THREE.Vector3(-1,0,0),new THREE.Vector3(0,1,0),new THREE.Vector3(.001,-1,.001).normalize(),new THREE.Vector3(0,0,1),new THREE.Vector3(0,0,-1)]){
+  const ray=new THREE.Raycaster(garment.position.clone().addScaledVector(axis,.3),axis.clone().negate());
+  assert.ok(ray.intersectObject(body)[0].distance-ray.intersectObject(garment)[0].distance>.003,'Shoulder mannequin is inset on every side');
+ }
+}
+const padHue=suit.materials.pad.color.getHSL({},THREE.SRGBColorSpace);
+assert.ok(padHue.h>.055&&padHue.h<.11&&padHue.s>.6,'Default impact inserts use distinct warm orange');
+assert.ok(suit.materials.knit.color.getHSL({},THREE.SRGBColorSpace).s<.15,'Cutlon remains neutral charcoal');
+const surfaceKinds=new Set();
+for(const [name,material] of Object.entries(suit.materials)){
+ if(name==='skin')continue;
+ assert.ok(material.map&&material.normalMap&&material.roughnessMap,`${name} has albedo, relief and roughness textures`);
+ surfaceKinds.add(material.userData.surfaceKind);
+ const normals=material.normalMap.image.data;let min=255,max=0;
+ for(let i=0;i<normals.length;i+=4){min=Math.min(min,normals[i]);max=Math.max(max,normals[i]);}
+ assert.ok(max>min,`${name} has real microstructure normals`);
+ assert.equal(material.map.colorSpace,THREE.SRGBColorSpace);
+ assert.ok(material.map.repeat.x>20&&material.map.repeat.x<70,'Surface scale is calibrated per metre');
+}
+assert.equal(surfaceKinds.size,11,'Eleven distinct material constructions');
+assert.equal(named('Left glove palm').material.userData.surfaceKind,'leather');
+assert.equal(named('Left NETFORCE mesh knuckle oval').material.userData.surfaceKind,'jersey');
+assert.equal(named('Left rounded athletic sole').material.userData.surfaceKind,'rubber');
+suit.root.traverse(m=>{if(m.isMesh&&m.material.map){assert.equal(m.geometry.userData.metricUV,true,`${m.name} uses physical texture scale`);assert.ok([...m.geometry.attributes.uv.array].every(Number.isFinite));}});
 // Full straps must present an exterior surface from every azimuth, not merely a front tab.
 for(const m of suit.parts.filter(m=>/wrap strap|groin soft leg loop/.test(m.name))){
  const center=new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
@@ -85,4 +133,4 @@ for(let i=1;i<4;i++)assert.ok(Math.abs(lameBounds[i].max.y-lameBounds[i-1].min.y
 const cup=new THREE.Box3().setFromObject(named('Removable groin impact cup'));
 assert.ok(lameBounds[3].min.y-cup.max.y>.09,'Groin insert remains independent with a flexible waist gap');
 suit.root.traverse(m=>{if(m.isMesh){assert.ok([...m.geometry.attributes.position.array].every(Number.isFinite));assert.ok([...m.geometry.attributes.normal.array].every(Number.isFinite));}});
-console.log('PASS: fixed Cutlon, continuous strap surfaces, coverage and pad locations, independent groin cup, all-component isolation, boot rays, camera fit, muted colors, product features and waist clearance.');
+console.log('PASS: independent orange pads, 588 mannequin-clearance rays, eleven textured materials, metric UVs, fixed Cutlon, full straps, component isolation, boot rays, camera fit, muted colors, product cards and waist clearance.');

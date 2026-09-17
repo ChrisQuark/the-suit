@@ -136,10 +136,10 @@ async function init3D(){
   camera=new THREE.PerspectiveCamera(32,1,.01,40);camera.position.set(.90,1.12,4.05);
   controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.0,0);controls.enableDamping=true;controls.dampingFactor=.07;controls.enablePan=false;controls.minDistance=.48;controls.maxDistance=Math.max(8,pieceReturn?pieceReturn.position.distanceTo(pieceReturn.target)*1.4:8);controls.minPolarAngle=FULL_ORBIT.min;controls.maxPolarAngle=FULL_ORBIT.max;controls.autoRotateSpeed=.65;
   controls.addEventListener('start',()=>{cameraTween=null;});
-  scene.add(new THREE.HemisphereLight(0xd5dbe5,0x151619,.7));
+  scene.add(new THREE.HemisphereLight(0xd5dbe5,0x151619,.85));
   const key=new THREE.DirectionalLight(0xf0ece5,2.8);key.position.set(-2.2,3.4,3.5);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-1.7;key.shadow.camera.right=1.7;key.shadow.camera.top=2.4;key.shadow.camera.bottom=-1.4;key.shadow.normalBias=.0015;key.shadow.bias=-.00015;scene.add(key);
-  const rim=new THREE.DirectionalLight(0xc4d2e6,2.4);rim.position.set(2.2,2.3,-1.7);scene.add(rim);
-  const front=new THREE.DirectionalLight(0xc3ccdc,.4);front.position.set(1.3,.6,3);scene.add(front);
+  const rim=new THREE.DirectionalLight(0xc4d2e6,2.0);rim.position.set(2.2,2.3,-1.7);scene.add(rim);
+  const front=new THREE.DirectionalLight(0xd5d8db,.9);front.position.set(1.3,.6,3);scene.add(front);
   suit.root.traverse(m=>{if(!m.isMesh)return;m.material=m.material.clone();m.userData.baseColor=m.material.color.clone();m.userData.baseMetalness=m.material.metalness;m.userData.baseRoughness=m.material.roughness;m.userData.baseMap=m.material.map;m.userData.colorMode=false;m.material.envMapIntensity=m.userData.layer===6?1.15:.48;m.userData.opacity=1;});
   suit.collarKnits.forEach(p=>p.userData.isCollar=true);scene.add(suit.root);
   const floor=new THREE.Mesh(new THREE.CircleGeometry(3,96),new THREE.MeshStandardMaterial({color:0x07080a,roughness:.72,metalness:.12,transparent:true,opacity:.92,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.008;floor.receiveShadow=true;scene.add(floor);
@@ -150,7 +150,7 @@ async function init3D(){
   // Keep normals-based occlusion out of transparent layer inspection.
   const target=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType});target.samples=Math.min(4,renderer.capabilities.maxSamples);
   const composer=new EffectComposer(renderer,target);composer.addPass(new RenderPass(scene,camera));
-  const occlusion=new SSAOPass(scene,camera,1,1,mobile?12:24);occlusion.kernelRadius=.055;occlusion.minDistance=.000025;occlusion.maxDistance=.0015;composer.addPass(occlusion);const glow=new UnrealBloomPass(new THREE.Vector2(1,1),.40,.55,.18);glow.enabled=false;composer.addPass(glow);composer.addPass(new OutputPass());
+  const occlusion=new SSAOPass(scene,camera,1,1,mobile?12:24);occlusion.kernelRadius=.055;occlusion.minDistance=.000025;occlusion.maxDistance=.0015;composer.addPass(occlusion);const glow=new UnrealBloomPass(new THREE.Vector2(1,1),.24,.35,.18);glow.enabled=false;composer.addPass(glow);composer.addPass(new OutputPass());
   const observer=new ResizeObserver(()=>{const b=$('viewport').getBoundingClientRect();renderer.setSize(b.width,b.height,false);camera.aspect=b.width/b.height;camera.updateProjectionMatrix();composer.setSize(b.width,b.height);if(state.selectedPart)framePiece();else if(!focusLayer)setCamera('full');});observer.observe($('viewport'));
   const raycaster=new THREE.Raycaster(),mouse=new THREE.Vector2();let down=null;
   $('scene').addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY};});
@@ -173,11 +173,11 @@ async function init3D(){
     for(const m of [...suit.parts,...suit.hardwareParts]){
       const target=desiredOpacity(m,state);if(state.selectedPart)m.userData.opacity=target;else m.userData.opacity+=(target-m.userData.opacity)*ease;m.visible=m.userData.opacity>.012;
       m.material.opacity=m.userData.opacity;m.material.transparent=m.userData.opacity<.995;m.material.depthWrite=m.userData.opacity>.75;
-      if(m.userData.colorMode!==state.colors){m.userData.colorMode=state.colors;m.material.map=state.colors&&!m.userData.keepDark?null:m.userData.baseMap;m.material.metalness=state.colors?.05:m.userData.baseMetalness;m.material.roughness=state.colors?.67:m.userData.baseRoughness;m.material.needsUpdate=true;}
+      if(m.userData.colorMode!==state.colors){m.userData.colorMode=state.colors;m.material.map=m.userData.baseMap;m.material.metalness=state.colors?.05:m.userData.baseMetalness;m.material.roughness=state.colors?Math.max(.55,m.userData.baseRoughness):m.userData.baseRoughness;m.material.needsUpdate=true;}
       const ex=m.userData.explode;m.position.copy(m.userData.rest).addScaledVector(ex,m.userData.layer===0?0:currentSeparation);
       if(state.peeling&&m.userData.layer>state.peelStage)m.position.addScaledVector(ex,.4);
       if(state.hardware&&m.userData.hardware&&!state.colors){m.material.color.lerp(new THREE.Color(0xb8cdaa),ease);if(m.material.emissive){m.material.emissive.setHex(0x597747);m.material.emissiveIntensity=.25;}}
-      else{m.material.color.lerp(state.colors&&!m.userData.keepDark?new THREE.Color(LAYER_COLORS[m.userData.layer]):m.userData.baseColor,ease);if(m.material.emissive){const selected=state.selectedPart===m.userData.component;m.material.emissive.setHex(selected?0xb0bd98:0x000000);m.material.emissiveIntensity=selected?.28:0;}}
+      else{m.material.color.lerp(state.colors&&!m.userData.keepDark?new THREE.Color(LAYER_COLORS[m.userData.layer]):m.userData.baseColor,ease);if(m.material.emissive){const selected=state.selectedPart===m.userData.component;m.material.emissive.setHex(selected?0xb0bd98:0x000000);m.material.emissiveIntensity=selected?(m.userData.keepDark?.025:.11):0;}}
     }
     suit.mannequin.visible=!state.selectedPart;
     floor.visible=contact.visible=!state.selectedPart&&currentSeparation<.01;

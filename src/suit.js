@@ -1,44 +1,12 @@
 import * as THREE from 'three';
 import { ghostGeometry, deformGeometry, limbSurface } from './ghost.js';
 
-// Deterministic microstructure stays self-contained, with no downloaded textures.
-function surface(kind, repeats=8){
-  const size=256, data=new Uint8Array(size*size*4);
-  for(let y=0;y<size;y++)for(let x=0;x<size;x++){
-    const hash=Math.sin(x*127.1+y*311.7)*43758.5453,noise=hash-Math.floor(hash);
-    const u=x%16,v=y%16;
-    let h=.5;
-    if(kind==='knit')h=.46+.22*Math.cos((u/16-Math.abs(v/8-1)*.42)*Math.PI*2)+.08*Math.sin(v*Math.PI/2);
-    if(kind==='carbon'){const over=(Math.floor(x/8)+Math.floor(y/8))%4<2;h=.39+.23*Math.sin((over?x:y)*Math.PI/4)+.12*(over?1:0);}
-    if(kind==='nylon')h=.5+.16*Math.sin(x*Math.PI/2)+.12*Math.cos(y*Math.PI/4);
-    if(kind==='metal')h=.57+.04*Math.sin(y*1.2)+.035*Math.sin(y*.31+x*.018);
-    if(kind==='rubber')h=.45+.13*Math.sin(x*.7)*Math.sin(y*.65);
-    const c=Math.round(255*Math.max(0,Math.min(1,h+(noise-.5)*(kind==='metal'?.09:.13))));
-    const i=(y*size+x)*4;data[i]=data[i+1]=data[i+2]=c;data[i+3]=255;
-  }
-  const t=new THREE.DataTexture(data,size,size);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(repeats,repeats);t.anisotropy=8;t.generateMipmaps=true;t.minFilter=THREE.LinearMipmapLinearFilter;t.magFilter=THREE.LinearFilter;t.needsUpdate=true;return t;
-}
+import { makeMaterials, scaleMetricUV, assignMetricUV } from './materials.js';
+
 // Every component is independent geometry. Coordinates are in metres.
 export function buildSuit(materials = {}) {
   const root = new THREE.Group(); root.name = 'Original modular protective suit';
-  const knitMap=surface('knit',24),carbonMap=surface('carbon',22),nylonMap=surface('nylon',16),metalMap=surface('metal',5),rubberMap=surface('rubber',7);
-  const mat = {
-    knit:new THREE.MeshPhysicalMaterial({color:0x17191b,roughness:.93,metalness:0,bumpMap:knitMap,bumpScale:.00032,sheen:.22,sheenColor:0x535966,sheenRoughness:.85}),
-    seam:new THREE.MeshStandardMaterial({color:0x25272a,roughness:.96}),
-    skin:new THREE.MeshStandardMaterial({color:0x16191d,roughness:.38,metalness:.16}),
-    pad:new THREE.MeshPhysicalMaterial({color:0xd57619,roughness:.59,metalness:0,clearcoat:.08,clearcoatRoughness:.6,bumpMap:rubberMap,bumpScale:.000045}),
-    padBacking:new THREE.MeshStandardMaterial({color:0x111518,roughness:.98,bumpMap:knitMap,bumpScale:.00012}),
-    pocket:new THREE.MeshPhysicalMaterial({color:0x202326,roughness:.91,bumpMap:knitMap,bumpScale:.0002,sheen:.18}),
-    soft:new THREE.MeshStandardMaterial({color:0x242629,roughness:.96,bumpMap:nylonMap,bumpScale:.0005}),
-    carbon:new THREE.MeshStandardMaterial({color:0x27292c,roughness:.44,metalness:.28,map:carbonMap,bumpMap:carbonMap,bumpScale:.00025}),
-    strap:new THREE.MeshStandardMaterial({color:0x17191b,roughness:.96,bumpMap:nylonMap,bumpScale:.0006}),
-    metal:new THREE.MeshPhysicalMaterial({color:0xc5ccd4,metalness:1,roughness:.19,bumpMap:metalMap,bumpScale:.000035,clearcoat:.30,clearcoatRoughness:.32,iridescence:.025,iridescenceIOR:1.3,iridescenceThicknessRange:[120,220]}),
-    edge:new THREE.MeshStandardMaterial({color:0x14181d,roughness:.6,metalness:.55}),
-    rubber:new THREE.MeshStandardMaterial({color:0x141619,roughness:.88,bumpMap:rubberMap,bumpScale:.0006}),
-    fastener:new THREE.MeshStandardMaterial({color:0x555c65,metalness:.7,roughness:.42}),
-    hook:new THREE.MeshStandardMaterial({color:0x3e443a,roughness:1}),
-    ...materials
-  };
+  const mat=makeMaterials(materials);
   const groups=Array.from({length:8},(_,i)=>{const g=new THREE.Group();g.userData.layer=i;g.name=['Cut-resistant knit','Impact pads','Soft ballistic vest','Rigid stab vest','Concealed neck armor','Webbing harness','Outer plates','Gloves and boots'][i];root.add(g);return g;});
   const mannequin=new THREE.Group();mannequin.name='Neutral mannequin';root.add(mannequin);
   const hardware=new THREE.Group();hardware.name='Attachment hardware';root.add(hardware);
@@ -58,14 +26,15 @@ export function buildSuit(materials = {}) {
     const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b),v=B.clone().sub(A);
     const length=v.length();
     const profile=[[0,.94],[.12,1.02],[.34,1.03],[.58,.92],[.81,.77],[1,.66]].map(([t,r])=>new THREE.Vector2(rx*r,(t-.5)*length));
-    const m=mesh(new THREE.LatheGeometry(new THREE.SplineCurve(profile).getPoints(40),48),material,parent,name,explode);m.scale.z=rz/rx;m.position.copy(A).add(B).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize());return remember(m);
+    const geometry=new THREE.LatheGeometry(new THREE.SplineCurve(profile).getPoints(40),48);scaleMetricUV(geometry,Math.PI*2*Math.sqrt((rx*rx+rz*rz)/2),length);
+    const m=mesh(geometry,material,parent,name,explode);m.scale.z=rz/rx;m.position.copy(A).add(B).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.normalize());return remember(m);
   }
   function rings(parent,name,rows,material,explode=[0,0,0],start=0,end=Math.PI*2){
     if(rows.length>4){const original=rows,curve=new THREE.CatmullRomCurve3(rows.map(r=>new THREE.Vector3(r[1],r[0],r[2])));rows=curve.getPoints((rows.length-1)*6).map((p,i)=>[p.y,p.x,p.z,original[Math.min(original.length-1,Math.round(i/6))][3]||0]);}
     const n=64,vs=[],uv=[],idx=[];
-    rows.forEach(([y,rx,rz,cz=0],r)=>{for(let j=0;j<=n;j++){let a=start+(end-start)*j/n;vs.push(Math.sin(a)*rx,y,Math.cos(a)*rz+cz);uv.push(j/n,r/(rows.length-1));}});
+    rows.forEach(([y,rx,rz,cz=0],r)=>{for(let j=0;j<=n;j++){let a=start+(end-start)*j/n;vs.push(Math.sin(a)*rx,y,Math.cos(a)*rz+cz);uv.push(j/n*Math.abs(end-start)*Math.sqrt((rx*rx+rz*rz)/2),y);}});
     for(let r=0;r<rows.length-1;r++)for(let j=0;j<n;j++){const a=r*(n+1)+j,b=a+n+1;idx.push(a,a+1,b,b,a+1,b+1);}
-    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.userData.metricUV=true;g.setIndex(idx);g.computeVertexNormals();
     return mesh(g,material,parent,name,explode);
   }
   function fittedShell(parent,name,rows,material,explode,start=-Math.PI,end=Math.PI,thickness=.003){
@@ -73,14 +42,14 @@ export function buildSuit(materials = {}) {
     const N=48,R=rows.length,vs=[],uv=[],idx=[];
     for(let side=0;side<2;side++)for(let r=0;r<R;r++)for(let j=0;j<=N;j++){
       const [y,cx,rx,rz,cz=0]=rows[r],a=start+(end-start)*j/N,t=side?-thickness:0;
-      vs.push(cx+Math.sin(a)*(rx+t),y,cz+Math.cos(a)*(rz+t));uv.push(j/N,r/(R-1));
+      vs.push(cx+Math.sin(a)*(rx+t),y,cz+Math.cos(a)*(rz+t));uv.push(j/N*Math.abs(end-start)*Math.sqrt((rx*rx+rz*rz)/2),y);
     }
     const count=R*(N+1),forward=end>start;
     function tri(a,b,c,reverse=false){if(forward!==reverse)idx.push(a,b,c);else idx.push(a,c,b);}
     for(let side=0;side<2;side++)for(let r=0;r<R-1;r++)for(let j=0;j<N;j++){const a=side*count+r*(N+1)+j,b=a+N+1;tri(a,a+1,b,!!side);tri(b,a+1,b+1,!!side);}
     for(let j=0;j<N;j++)for(const r of [0,R-1]){const a=r*(N+1)+j;tri(a,a+count,a+1,r>0);tri(a+1,a+count,a+count+1,r>0);}
     for(let r=0;r<R-1;r++)for(const j of [0,N]){const a=r*(N+1)+j,b=a+N+1;tri(a,b,a+count,j===N);tri(b,b+count,a+count,j===N);}
-    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();return mesh(g,material,parent,name,explode);
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.userData.metricUV=true;g.setIndex(idx);g.computeVertexNormals();return mesh(g,material,parent,name,explode);
   }
   function shoulderRibbon(name,x,explode){
     const path=new THREE.CatmullRomCurve3([[x,1.34,.155],[x,1.55,.157],[x,1.66,.11],[x,1.685,0],[x,1.66,-.11],[x,1.55,-.157],[x,1.34,-.155]].map(v=>new THREE.Vector3(...v)));
@@ -90,7 +59,7 @@ export function buildSuit(materials = {}) {
   function tailoredLimb(parent,name,rows,material,explode){
     const center=new THREE.CatmullRomCurve3(rows.map(r=>new THREE.Vector3(r[1],r[0],r[4]||0)));
     const radii=new THREE.SplineCurve(rows.map(r=>new THREE.Vector2(r[2],r[3])));
-    const vs=[],uv=[],idx=[],R=96,N=48;
+    const vs=[],innerVs=[],uv=[],idx=[],R=96,N=48;
     for(let i=0;i<=R;i++){
       const t=i/R,c=center.getPoint(t),r=radii.getPoint(t);
       for(let j=0;j<=N;j++){
@@ -98,11 +67,15 @@ export function buildSuit(materials = {}) {
         // Irregular, shallow compression folds around the articulated joints.
         const joint=name.includes('sleeve')?Math.exp(-Math.pow((c.y-1.36)/.038,2)):Math.exp(-Math.pow((c.y-.60)/.05,2));
         const wrinkle=.0009*joint*(Math.sin(c.y*390+a*2)+.35*Math.sin(c.y*680-a*3));
-        vs.push(c.x+(r.x+wrinkle)*Math.sin(a),c.y,c.z+(r.y+wrinkle)*Math.cos(a));uv.push(j/N,t*1.3);
+        vs.push(c.x+(r.x+wrinkle)*Math.sin(a),c.y,c.z+(r.y+wrinkle)*Math.cos(a));
+        // Inset about this ring's own centre; global scaling moves inner thighs out of their garment.
+        innerVs.push(c.x+(r.x+wrinkle-.0035)*Math.sin(a),c.y,c.z+(r.y+wrinkle-.0035)*Math.cos(a));
+        uv.push(j/N*Math.PI*2*Math.sqrt((r.x*r.x+r.y*r.y)/2),c.y);
       }
     }
     for(let i=0;i<R;i++)for(let j=0;j<N;j++){const a=i*(N+1)+j,b=a+N+1;idx.push(a,b,a+1,b,b+1,a+1);}
-    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(idx);g.computeVertexNormals();const inner=mesh(g.clone(),mat.skin,mannequin,name+' mannequin');inner.scale.set(.99,1,.99);return mesh(g,material,parent,name,explode);
+    const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vs,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.userData.metricUV=true;g.setIndex(idx);g.computeVertexNormals();const innerGeometry=g.clone();innerGeometry.setAttribute('position',new THREE.Float32BufferAttribute(innerVs,3));innerGeometry.computeVertexNormals();
+    const inner=mesh(innerGeometry,mat.skin,mannequin,name+' mannequin');inner.userData.garmentName=name;inner.userData.radialClearance=.0035;return mesh(g,material,parent,name,explode);
   }
   function shellRelief(name,x,y){
     const bell=(v,c,w)=>Math.exp(-Math.pow((v-c)/w,2));
@@ -153,10 +126,10 @@ export function buildSuit(materials = {}) {
       p.setZ(i,p.getZ(i)+z-curve*x*x+h);
       const normal=new THREE.Vector3(n.getX(i)+(2*curve*x-dx)*n.getZ(i),n.getY(i)-dy*n.getZ(i),n.getZ(i)).normalize();n.setXYZ(i,normal.x,normal.y,normal.z);
     }
-    const uv=new Float32Array(p.count*2);for(let i=0;i<p.count;i++){uv[i*2]=p.getX(i)*3;uv[i*2+1]=p.getY(i)*3;}geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));
+    const uv=new Float32Array(p.count*2);for(let i=0;i<p.count;i++){uv[i*2]=p.getX(i);uv[i*2+1]=p.getY(i);}geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.userData.metricUV=true;
     return mesh(geo,material,parent,name,explode);
   }
-  function line(parent,name,points,material,radius=.0013,explode=[0,0,0]){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));return mesh(new THREE.TubeGeometry(curve,24,radius,5,false),material,parent,name,explode);}
+  function line(parent,name,points,material,radius=.0013,explode=[0,0,0]){const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));const geometry=new THREE.TubeGeometry(curve,24,radius,5,false);scaleMetricUV(geometry,curve.getLength(),Math.PI*2*radius);return mesh(geometry,material,parent,name,explode);}
   function ghostPad(name,kind,map,explode){
     const g=ghostGeometry(kind);
     let main;
@@ -186,7 +159,7 @@ export function buildSuit(materials = {}) {
   for(const s of [-1,1]){
     const side=s<0?'Left':'Right';
     // Organic knit sleeve silhouette, relaxed A stance.
-    ellipsoid(mannequin,`${side} shoulder`,[s*.237,1.615,0],[.080,.072,.072],mat.skin);
+    ellipsoid(mannequin,`${side} shoulder`,[s*.244,1.604,0],[.078,.071,.070],mat.skin);
     ellipsoid(groups[0],`${side} shoulder knit`,[s*.244,1.604,0],[.082,.075,.074],mat.knit,[s*.055,0,-.035]);
     const armA=[s*.274,1.593,0],armB=[s*.355,1.359,.004],armC=[s*.409,1.11,.026];
     tailoredLimb(groups[0],`${side} continuous tailored sleeve`,[[1.634,s*.248,.066,.064,0],[1.57,s*.282,.070,.066,.003],[1.46,s*.321,.062,.056,.005],[1.36,s*.355,.047,.047,.004],[1.28,s*.379,.050,.048,.012],[1.18,s*.403,.038,.035,.022],[1.105,s*.413,.031,.030,.026]],mat.knit,[s*.055,0,-.035]);
@@ -215,7 +188,7 @@ export function buildSuit(materials = {}) {
     // Outer limb panels deliberately independent of shoulders, chest and joints.
     const shoulderGeo=new THREE.SphereGeometry(1,64,36,0,Math.PI*2,0,Math.PI*.60);
     const shoulder=mesh(shoulderGeo,mat.metal,groups[6],`${side} independent shoulder cap`,[s*.30,.075,.36]);shoulder.position.set(s*.258,1.623,.003);shoulder.scale.set(.095,.076,.092);shoulder.rotation.z=-s*.24;remember(shoulder);
-    const innerShoulder=mesh(shoulderGeo.clone(),new THREE.MeshStandardMaterial({color:0x101318,roughness:.70,metalness:.25,side:THREE.BackSide}),groups[6],`${side} shoulder shell inner face`,[s*.30,.075,.36]);innerShoulder.position.copy(shoulder.position);innerShoulder.scale.copy(shoulder.scale).multiplyScalar(.97);innerShoulder.quaternion.copy(shoulder.quaternion);remember(innerShoulder);
+    const innerShoulder=mesh(shoulderGeo.clone(),Object.assign(mat.edge.clone(),{side:THREE.BackSide}),groups[6],`${side} shoulder shell inner face`,[s*.30,.075,.36]);innerShoulder.userData.keepDark=true;innerShoulder.position.copy(shoulder.position);innerShoulder.scale.copy(shoulder.scale).multiplyScalar(.97);innerShoulder.quaternion.copy(shoulder.quaternion);remember(innerShoulder);
     const hemPoints=Array.from({length:65},(_,j)=>{const a=j/64*Math.PI*2,t=Math.PI*.60;return new THREE.Vector3(-Math.cos(a)*Math.sin(t),Math.cos(t),Math.sin(a)*Math.sin(t)).multiply(shoulder.scale).applyQuaternion(shoulder.quaternion).add(shoulder.position).toArray();});
     line(groups[6],`${side} rolled shoulder shell edge`,hemPoints,mat.edge,.0017,[s*.30,.075,.36]);
     const sx=s*.39;
@@ -239,27 +212,27 @@ export function buildSuit(materials = {}) {
       fittedShell(groups[5],`${side} ${label} full wrap strap`,[[y-.009,cx,rx,rz,cz],[y+.009,cx,rx,rz,cz]],mat.strap,[s*.075,0,0],0,Math.PI*2,.002);
     }
     // Fingered gloves, flexible wrists, and athletic boot soles.
-    ellipsoid(groups[7],`${side} glove palm`,[s*.431,1.064,.031],[.042,.063,.026],mat.rubber,[s*.18,-.025,.16]);
-    for(let f=0;f<4;f++){const x=s*(.404+f*.017),y=1.005+(f===0?.01:f===3?.012:0);ellipsoid(groups[7],`${side} glove finger ${f+1}`,[x,y,.034],[.010,.041-(f===3?.007:0),.012],mat.rubber,[s*.18,-.025,.16],16);}
-    const thumb=ellipsoid(groups[7],`${side} glove thumb`,[s*.39,1.055,.049],[.013,.035,.016],mat.rubber,[s*.18,-.025,.16]);thumb.rotation.z=-s*.45;
-    link(groups[7],`${side} glove wrist`,[s*.409,1.1,.026],[s*.419,1.126,.026],.040,.034,mat.rubber,[s*.18,-.025,.16]);
+    ellipsoid(groups[7],`${side} glove palm`,[s*.431,1.064,.031],[.042,.063,.026],mat.leather,[s*.18,-.025,.16]);
+    for(let f=0;f<4;f++){const x=s*(.404+f*.017),y=1.005+(f===0?.01:f===3?.012:0);ellipsoid(groups[7],`${side} glove finger ${f+1}`,[x,y,.034],[.010,.041-(f===3?.007:0),.012],mat.leather,[s*.18,-.025,.16],16);}
+    const thumb=ellipsoid(groups[7],`${side} glove thumb`,[s*.39,1.055,.049],[.013,.035,.016],mat.leather,[s*.18,-.025,.16]);thumb.rotation.z=-s*.45;
+    link(groups[7],`${side} glove wrist`,[s*.409,1.1,.026],[s*.419,1.126,.026],.040,.034,mat.leather,[s*.18,-.025,.16]);
     const gloveEx=[s*.18,-.025,.16];
-    const cuff=link(groups[7],`${side} NETFORCE extended glove cuff`,[s*.415,1.098,.026],[s*.401,1.195,.020],.047,.037,mat.rubber,gloveEx);
-    ellipsoid(groups[7],`${side} NETFORCE cuff mesh insert`,[s*.407,1.153,.057],[.021,.034,.004],mat.strap,gloveEx);
-    ellipsoid(groups[7],`${side} NETFORCE mesh knuckle oval`,[s*.431,1.05,.057],[.036,.018,.006],mat.strap,gloveEx);
-    const cuffBand=box(groups[7],`${side} NETFORCE cuff closure`,[s*.416,1.108,.061],[.084,.016,.007],mat.rubber,gloveEx);cuffBand.rotation.z=s*.10;
-    for(let f=0;f<4;f++)ellipsoid(groups[7],`${side} NETFORCE dorsal finger mesh ${f+1}`,[s*(.404+f*.017),1.02,.046],[.006,.019,.003],mat.strap,gloveEx,16);
+    const cuff=link(groups[7],`${side} NETFORCE extended glove cuff`,[s*.415,1.098,.026],[s*.401,1.195,.020],.047,.037,mat.leather,gloveEx);
+    ellipsoid(groups[7],`${side} NETFORCE cuff mesh insert`,[s*.407,1.153,.057],[.021,.034,.004],mat.mesh,gloveEx);
+    ellipsoid(groups[7],`${side} NETFORCE mesh knuckle oval`,[s*.431,1.05,.057],[.036,.018,.006],mat.mesh,gloveEx);
+    const cuffBand=box(groups[7],`${side} NETFORCE cuff closure`,[s*.416,1.108,.061],[.084,.016,.007],mat.leather,gloveEx);cuffBand.rotation.z=s*.10;
+    for(let f=0;f<4;f++)ellipsoid(groups[7],`${side} NETFORCE dorsal finger mesh ${f+1}`,[s*(.404+f*.017),1.02,.046],[.006,.019,.003],mat.mesh,gloveEx,16);
     const bootRows=[[-.058,.036,.071,.031],[-.045,.050,.096,.049],[-.005,.058,.107,.064],[.035,.061,.101,.061],[.080,.064,.083,.043],[.135,.063,.069,.028],[.178,.053,.065,.023],[.206,.023,.062,.018],[.213,.001,.061,.005]];
     const bp=[],bu=[],bi=[],N=48;
     const bc=new THREE.CatmullRomCurve3(bootRows.map(r=>new THREE.Vector3(r[0],r[1],r[2]))),br=new THREE.SplineCurve(bootRows.map(r=>new THREE.Vector2(r[3],0)));
-    for(let i=0;i<=64;i++){const t=i/64,c=bc.getPoint(t),ry=br.getPoint(t).x;for(let j=0;j<=N;j++){const a=j/N*Math.PI*2;bp.push(s*.153+c.y*Math.cos(a),Math.max(.042,c.z+ry*Math.sin(a)),c.x);bu.push(j/N,t);}}
+    for(let i=0;i<=64;i++){const t=i/64,c=bc.getPoint(t),ry=br.getPoint(t).x;for(let j=0;j<=N;j++){const a=j/N*Math.PI*2;bp.push(s*.153+c.y*Math.cos(a),Math.max(.042,c.z+ry*Math.sin(a)),c.x);bu.push(.36*j/N,.271*t);}}
     for(let i=0;i<64;i++)for(let j=0;j<N;j++){const a=i*(N+1)+j,b=a+N+1;bi.push(a,a+1,b,b,a+1,b+1);}
     for(const row of [0,64]){
       const center=bp.length/3,z=bp[(row*(N+1))*3+2];let cy=0;for(let j=0;j<N;j++)cy+=bp[(row*(N+1)+j)*3+1]/N;
-      bp.push(s*.153,cy,z);bu.push(.5,row/64);
+      bp.push(s*.153,cy,z);bu.push(.18,.271*row/64);
       for(let j=0;j<N;j++){const a=row*(N+1)+j,b=a+1;if(row===0)bi.push(center,b,a);else bi.push(center,a,b);}
     }
-    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(bp,3));bg.setAttribute('uv',new THREE.Float32BufferAttribute(bu,2));bg.setIndex(bi);bg.computeVertexNormals();mesh(bg,mat.rubber,groups[7],`${side} sculpted athletic boot`,[s*.14,.035,.13]);
+    const bg=new THREE.BufferGeometry();bg.setAttribute('position',new THREE.Float32BufferAttribute(bp,3));bg.setAttribute('uv',new THREE.Float32BufferAttribute(bu,2));bg.userData.metricUV=true;bg.setIndex(bi);bg.computeVertexNormals();mesh(bg,mat.leather,groups[7],`${side} sculpted athletic boot`,[s*.14,.035,.13]);
     const sock=bg.clone(),sp=sock.attributes.position;
     for(let i=0;i<sp.count;i++){sp.setX(i,s*.153+(sp.getX(i)-s*.153)*.88);sp.setY(i,Math.max(.040,sp.getY(i)-.020));}sock.computeVertexNormals();mesh(sock,mat.knit,groups[0],`${side} Cutlon foot sleeve`);
     ghostPad(`${side} Ghost met guard`,'met',(u,v,w)=>{
@@ -270,7 +243,7 @@ export function buildSuit(materials = {}) {
     },[s*.12,.10,.25]);
     for(const d of [-1,1])line(groups[7],`${side} bonded boot quarter seam ${d}`,[[s*.153+d*.051,.115,-.03],[s*.153+d*.060,.118,.035],[s*.153+d*.062,.089,.092],[s*.153+d*.055,.080,.161]],mat.seam,.00085,[s*.14,.035,.13]);
     const soleShape=new THREE.Shape();soleShape.moveTo(-.035,-.065);soleShape.quadraticCurveTo(-.07,-.065,-.07,-.02);soleShape.lineTo(-.07,.16);soleShape.quadraticCurveTo(-.07,.215,0,.215);soleShape.quadraticCurveTo(.07,.215,.07,.16);soleShape.lineTo(.07,-.02);soleShape.quadraticCurveTo(.07,-.065,.035,-.065);soleShape.closePath();
-    const sole=mesh(new THREE.ExtrudeGeometry(soleShape,{depth:.021,bevelEnabled:true,bevelThickness:.003,bevelSize:.002,bevelSegments:2,steps:1,curveSegments:16}),mat.edge,groups[7],`${side} rounded athletic sole`,[s*.14,.035,.13]);sole.rotation.x=Math.PI/2;sole.position.set(s*.153,.041,0);remember(sole);
+    const sole=mesh(new THREE.ExtrudeGeometry(soleShape,{depth:.021,bevelEnabled:true,bevelThickness:.003,bevelSize:.002,bevelSegments:2,steps:1,curveSegments:16}),mat.rubber,groups[7],`${side} rounded athletic sole`,[s*.14,.035,.13]);sole.rotation.x=Math.PI/2;sole.position.set(s*.153,.041,0);remember(sole);
     link(groups[7],`${side} knit boot collar`,[s*.151,.135,0],[s*.15,.201,0],.058,.060,mat.knit,[s*.14,.035,.13]);
     for(let j=0;j<5;j++){
       const y=.150-j*.008,z=.040+j*.021,ex=[s*.14,.035,.13];
@@ -414,6 +387,7 @@ export function buildSuit(materials = {}) {
     if(!components.has(id))components.set(id,{id,name:label.charAt(0).toUpperCase()+label.slice(1),layer,meshes:[]});
     const c=components.get(id);c.meshes.push(m);if(layer===6&&!m.userData.hardware)c.layer=6;
   }
+  root.traverse(m=>{if(m.isMesh)assignMetricUV(m);});
   root.updateMatrixWorld(true);
   for(const c of components.values()){const bounds=new THREE.Box3();for(const m of c.meshes)bounds.union(new THREE.Box3().setFromObject(m));c.dimensions=bounds.getSize(new THREE.Vector3()).toArray();}
   return {root,groups,parts,components,hardware,hardwareParts,collarKnits,mannequin,materials:mat,abdominal,pads};
